@@ -1,0 +1,8 @@
+TrapeGen horizontal-reference fixture                                   S      1
+1H,,1H;,8HTrapeGen,13Hreference.igs,8HTrapeGen,1H1,32,38,6,308,15,8HTrapG      1
+eGen,1.0,2,2HMM,1,0.0,15H20261124.000000,1.0E-7,10000.0,8HTrapeGen,8HTraG      2
+peGen,11,0,15H20261124.000000;                                          G      3
+     110       1       0       0       0       0       0       000000000D      1
+     110       0       0       1       0                    BLUE       1D      2
+110,-35,87,34,35,87,34;                                                1P      1
+S      1G      3D      2P      1                                        T      1

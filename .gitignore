@@ -1,0 +1,5 @@
+.venv/
+.venv-py313-backup/
+__pycache__/
+*.egg-info/
+.mplconfig/

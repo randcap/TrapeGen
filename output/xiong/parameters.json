@@ -1,0 +1,64 @@
+{
+  "stl_path": "data/stl/xiong.stl",
+  "igs_path": "data/igs/xiong-blue-demo.igs",
+  "stl_unit": "cm",
+  "world_mm_to_local_mm": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "local_coordinates": "right-handed X left-right, Y up, Z extrusion; mm",
+  "stl_output_coordinates": "original input coordinate frame and unit",
+  "section_output_coordinates": "local XYZ in mm",
+  "profile_output_coordinates": "local XY in mm",
+  "blue_y_mm": 87.0,
+  "blue_reference_source": "line",
+  "blue_reference_index": 0,
+  "iges_length_unit_flag": 2,
+  "blue_reference_points_local_mm": [
+    [
+      -35.0,
+      87.0,
+      34.0
+    ],
+    [
+      35.0,
+      87.0,
+      34.0
+    ]
+  ],
+  "red_y_mm": 76.5,
+  "yellow_y_mm": 69.0,
+  "offset_mm": 7.5,
+  "angle_deg": 53.0,
+  "margin_mm": 1.0,
+  "z_range_local_mm": [
+    -33.78390407562256,
+    36.40285587310791
+  ],
+  "section_contour_index": 0,
+  "section_areas_mm2": [
+    3989.186316300079
+  ]
+}
