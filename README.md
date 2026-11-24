@@ -13,7 +13,7 @@ uv pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-需要与平台和 Python 版本匹配的 OCP wheel。可离线取得核心几何依赖的环境也能使用手动蓝线和受限直线读取器。此仓库当前的验证环境由本机 Python 3.10 和本地 wheel 缓存安装，Open CASCADE wheel 因网络限制不可用。完整安装和 OCP 测试应在有该 wheel 的环境执行。
+需要与平台和 Python 版本匹配的 OCP wheel。可离线取得核心几何依赖的环境也能使用手动蓝线和受限直线读取器。
 
 ## 命令行
 
