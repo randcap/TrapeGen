@@ -5,7 +5,8 @@ setup(
     name="trapegen",
     version="0.1.0",
     python_requires=">=3.10",
-    packages=find_packages(),
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     install_requires=[
         "numpy>=2.2.6,<3",
         "scipy>=1.15.3,<2",

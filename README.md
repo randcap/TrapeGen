@@ -15,6 +15,8 @@ python -m unittest discover -s tests -v
 
 需要与平台和 Python 版本匹配的 OCP wheel。可离线取得核心几何依赖的环境也能使用手动蓝线和受限直线读取器。
 
+源码位于 `src/trapegen/`。完成可编辑安装后，可在 Python 中使用 `import trapegen`，也可用 `trapegen`、`python -m trapegen` 或从项目根目录用 `python main.py` 调用命令行入口。
+
 ## 命令行
 
 ```bash
