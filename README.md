@@ -7,7 +7,7 @@
 在项目根目录执行以下命令。示例使用 Python 3.10，依赖统一配置在 `setup.py`。CAD 读取使用 Open CASCADE 的 `cadquery-ocp-novtk` Python 绑定。
 
 ```bash
-uv venv --python 3.10 .venv   # 已有 .venv 时跳过
+uv venv --python 3.10   # 已有 .venv 时跳过
 source .venv/bin/activate
 uv pip install -e .
 python -m unittest discover -s tests -v
