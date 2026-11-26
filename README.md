@@ -19,6 +19,8 @@ python -m unittest discover -s tests -v
 
 ## 命令行
 
+浏览器交互页面支持 STL 上传、旋转、平移、缩放、调参裁剪和下载，启动步骤见 [前端工作台](frontend/README.md)。
+
 ```bash
 source .venv/bin/activate
 trapegen --stl data/stl/part.stl --igs data/igs/blue.igs \

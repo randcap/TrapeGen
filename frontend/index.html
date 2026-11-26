@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TrapeGen · 模型工作台</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <header>
+    <strong><i aria-hidden="true">◩</i> TrapeGen</strong>
+    <span>模型工作台</span>
+    <button id="upload">打开 STL</button>
+    <input id="file" type="file" accept=".stl" hidden>
+  </header>
+  <main>
+    <section id="stage" aria-label="三维模型">
+      <div class="caption">
+        <h1 id="name">xiong.stl</h1>
+        <small id="count">正在加载模型…</small>
+      </div>
+      <div id="viewport"></div>
+      <div id="edit-tools" class="edit-tools" role="group" aria-label="视窗编辑工具">
+        <button data-edit="view" aria-pressed="true">查看</button>
+        <button data-edit="yellow" aria-pressed="false">移黄面</button>
+        <button data-edit="blue" aria-pressed="false">移蓝面</button>
+        <button data-edit="angle" aria-pressed="false">转斜面</button>
+      </div>
+      <figure id="comparison-inset" class="comparison-inset" hidden>
+        <figcaption>裁剪后</figcaption>
+        <div id="comparison-viewport"></div>
+      </figure>
+      <button id="compare" disabled aria-pressed="false"
+        title="悬停查看裁剪后的模型">对比</button>
+      <div class="tools">
+        <button id="front">正视</button>
+        <button id="side">侧视</button>
+        <button id="fit">适应窗口</button>
+      </div>
+      <small class="hint">左键旋转 · 右键平移 · 滚轮缩放</small>
+    </section>
+    <aside class="preview-panel" aria-label="裁剪预览">
+      <h2><button id="toggle-preview" aria-expanded="true" aria-controls="preview-body">
+        裁剪预览 <span class="toggle-chevron" aria-hidden="true"></span>
+      </button></h2>
+      <div id="preview-body" class="preview-body">
+        <div class="preview-content">
+          <div class="preview-summary">
+            <output id="preview-status" data-state="pending" role="status">正在读取 STL…</output>
+            <output id="section-info"></output>
+          </div>
+          <h3>参考位置</h3>
+          <label>STL 单位
+            <select id="unit"><option>mm</option><option selected>cm</option><option>m</option><option>in</option></select>
+          </label>
+          <label><span><i class="swatch yellow"></i>黄线 Y</span><span><input id="yellow" type="number" step="any" value="69"> mm</span></label>
+          <label><span><i class="swatch blue"></i>蓝线 Y</span><span><input id="blue" type="number" step="any" value="87"> mm</span></label>
+          <h3>梯形参数</h3>
+          <label for="offset"><span><i class="swatch red"></i>向上偏移</span><output id="offsetValue"></output></label>
+          <input id="offset" type="range" min="5" max="10" step=".1" value="7.5">
+          <label for="angle"><span><i class="swatch violet"></i>斜边角度</span><output id="angleValue"></output></label>
+          <input id="angle" type="range" min="52" max="55" step=".1" value="53">
+          <label class="check"><input id="union" type="checkbox" checked> 合并重叠外壳</label>
+          <label for="opacity">
+            <span><i class="swatch removed"></i>待裁剪区不透明度</span><output id="opacityValue">20%</output>
+          </label>
+          <input id="opacity" type="range" min="0" max="100" step="1" value="20">
+          <div class="actions">
+            <button class="primary" id="apply" disabled>导出裁剪 STL</button>
+            <button id="download" disabled>下载原始 STL</button>
+          </div>
+          <p id="status" role="status"></p>
+        </div>
+      </div>
+    </aside>
+  </main>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
