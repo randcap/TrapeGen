@@ -33,7 +33,8 @@ export function createViewer(host, inset, beforeRender, edit) {
   scene.add(lighting)
 
   const preview = createPreviewMaterial()
-  const model = new THREE.Mesh(new THREE.BufferGeometry(), preview.material)
+  const emptyGeometry = new THREE.BufferGeometry()
+  const model = new THREE.Mesh(emptyGeometry, preview.material)
   model.visible = false
   const removed = createPreviewMaterial({ ghost: true })
   const ghost = new THREE.Mesh(model.geometry, removed.material)
@@ -185,6 +186,12 @@ export function createViewer(host, inset, beforeRender, edit) {
       const axisLength = max => THREE.MathUtils.clamp(max + radius * 0.16, radius * 0.65, radius * 1.5)
       axes.scale.set(axisLength(bounds.max.x), axisLength(bounds.max.y), axisLength(bounds.max.z))
       if (fitView) fit(new THREE.Vector3(0.32, 0.12, 1))
+    },
+    clear() {
+      model.geometry = ghost.geometry = insetModel.geometry = emptyGeometry
+      caps.setGeometry(emptyGeometry)
+      model.visible = false
+      bounds = center = radius = undefined
     },
     updatePreview(params, profile, { expanded, comparing, connectorMode, surface, placement, opacity, outline, ab }) {
       activeParams = params

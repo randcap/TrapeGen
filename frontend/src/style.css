@@ -113,6 +113,66 @@ button:disabled {
   box-shadow: 0 6px 24px #243a3035;
 }
 
+.model-delete, .slider-range-dialog {
+  width: min(400px, calc(100% - 32px));
+  padding: 22px;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c5d1ca;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px #192c2a36;
+}
+
+.model-delete::backdrop, .slider-range-dialog::backdrop {
+  background: #22393370;
+}
+
+.model-delete h2, .slider-range-dialog h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+
+.model-delete p {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+#model-delete-name {
+  font-weight: 650;
+}
+
+.model-delete-actions, .slider-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.slider-range-dialog .primary {
+  width: auto;
+}
+
+#slider-range-error {
+  margin: 8px 0;
+  color: #864212;
+  font-size: 13px;
+}
+
+#slider-range-error:empty {
+  display: none;
+}
+
+.model-delete .danger {
+  color: #fff;
+  background: #9c392f;
+  border-color: #9c392f;
+}
+
+.model-delete .danger:hover {
+  color: #fff;
+  background: #7e2b24;
+}
+
 .pose-panel {
   inset: 61px 4vw auto auto;
   margin: 0;
@@ -445,6 +505,59 @@ h3 {
   border-top: 1px solid #dce3dd;
   padding-top: 20px;
   margin: 20px 0 12px;
+}
+
+.parameter-control {
+  margin: 9px 0;
+}
+
+.parameter-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 23px 55px 19px 23px;
+  gap: 4px;
+  align-items: center;
+}
+
+.parameter-value label {
+  display: block;
+  margin: 0;
+  font-size: 13px;
+}
+
+.parameter-value span {
+  font-size: 11px;
+}
+
+.parameter-value input[type=number] {
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.parameter-value input::-webkit-inner-spin-button,
+.parameter-value input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.parameter-value button {
+  height: 26px;
+  padding: 0;
+}
+
+.parameter-slider {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.parameter-slider button {
+  flex: none;
+  padding: 3px 8px;
+  font-size: 12px;
 }
 
 .preview-summary {

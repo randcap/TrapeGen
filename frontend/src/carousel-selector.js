@@ -87,7 +87,8 @@ export class CarouselSelector {
   setItems(items, index = this.selectedIndex) {
     const hadItemFocus = this.track.contains(document.activeElement)
     this.items = [...items]
-    this.buttons = this.items.map(({ id, name, thumbnail, icon }, i) => {
+    this.buttons = []
+    const cards = this.items.map(({ id, name, thumbnail, icon, action }, i) => {
       const button = element('button', 'carousel-card')
       button.type = 'button'
       button.dataset.itemId = id
@@ -106,17 +107,27 @@ export class CarouselSelector {
       title.textContent = name
       button.append(artwork, title)
       button.onclick = () => this.select(i)
-      return button
+      this.buttons.push(button)
+      if (!action) return button
+      const card = element('div', 'carousel-item')
+      const control = element('button', 'carousel-item-action')
+      control.type = 'button'
+      control.textContent = action.icon
+      control.setAttribute('aria-label', action.label)
+      control.title = action.label
+      control.onclick = action.onClick
+      card.append(button, control)
+      return card
     })
-    this.track.replaceChildren(...this.buttons)
+    this.track.replaceChildren(...cards)
     this.setSelectedIndex(index, { animate: false })
     if (hadItemFocus) this.buttons[this.selectedIndex]?.focus({ preventScroll: true })
   }
 
   position(animate = true) {
-    const button = this.buttons[this.selectedIndex]
-    if (!button || !this.viewport.clientWidth) return
-    const x = (this.viewport.clientWidth - button.offsetWidth) / 2 - button.offsetLeft
+    const card = this.track.children[this.selectedIndex]
+    if (!card || !this.viewport.clientWidth) return
+    const x = (this.viewport.clientWidth - card.offsetWidth) / 2 - card.offsetLeft
     const transform = `translateX(${x}px)`
     if (this.track.style.transform === transform) return
     if (!animate) this.track.style.transition = 'none'
@@ -135,6 +146,8 @@ export class CarouselSelector {
       const selected = i === this.selectedIndex
       button.setAttribute('aria-pressed', selected)
       button.tabIndex = selected ? 0 : -1
+      const action = button.nextElementSibling
+      if (action?.classList.contains('carousel-item-action')) action.tabIndex = selected ? 0 : -1
     })
     this.previous.setAttribute('aria-disabled', this.selectedIndex <= 0)
     this.next.setAttribute('aria-disabled', this.selectedIndex < 0 || this.selectedIndex === this.items.length - 1)

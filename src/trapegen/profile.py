@@ -100,17 +100,19 @@ def _ab_extrema(section, ab_z_range_mm):
     return tuple((float(x), section.y_mm, float(z)) for x, z in (left, right))
 
 
-def build_trapezoid(section, y_blue, angle_deg, tol, *, ab_z_range_mm=None):
+def build_trapezoid(section, y_blue, angle_deg, tol, *, ab_z_range_mm=None, ab_x_offsets_mm=(0.0, 0.0)):
     y_red = section.y_mm
     a, b = _ab_extrema(section, ab_z_range_mm)
-    x_a, x_b = a[0], b[0]
+    x_a, x_b = a[0] + ab_x_offsets_mm[0], b[0] + ab_x_offsets_mm[1]
     y_blue = float(y_blue)
     height = y_blue - y_red
     inset = height / tan(radians(angle_deg))
     lower = x_b - x_a
     upper = lower - 2 * inset
+    if not all(isfinite(value) for value in (x_a, x_b, lower, upper)):
+        raise GeometryError("Adjusted trapezoid coordinates must be finite.")
     if lower <= tol.coordinate_mm:
-        raise GeometryError("Selected section has negligible X width.")
+        raise GeometryError("The left bottom endpoint A must stay to the left of B.")
     if upper <= tol.coordinate_mm:
         raise GeometryError(f"Trapezoid upper base is not positive ({upper:g} mm).")
     geometry = Trapezoid(
@@ -130,7 +132,9 @@ def checked_polygon(vertices):
 def build_keep(geometry, bounds, margin):
     x_min, y_min, _ = bounds[0]
     x_max = bounds[1, 0]
-    left, right, bottom = x_min - margin, x_max + margin, y_min - margin
+    left = min(x_min, geometry.A[0]) - margin
+    right = max(x_max, geometry.B[0]) + margin
+    bottom = y_min - margin
     y = geometry.A[1]
     rectangle = [[left, bottom], [right, bottom], [right, y], [left, y]]
     polygon = checked_polygon([

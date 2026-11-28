@@ -32,6 +32,7 @@ trapegen --stl data/stl/part.stl --igs data/igs/blue.igs \
 - `--transform frame.json` 接受 4×4 右手刚体变换矩阵，将已换算成毫米的原始坐标变换至局部坐标，平移也以 mm 表示。局部 X 向右，Y 向上，Z 沿前后方向。未提供矩阵时使用单位变换。
 - `--reference-index` 选择零起始的 IGES 边，`--contour-index` 选择有效截面外轮廓，按 XZ 面积降序排列，同面积按包围盒排序。出现多个候选时需显式指定。
 - `--ab-z-range MIN MAX` 在选定的红线截面外轮廓上，将 A/B 取点限制在给定的局部 Z 范围内，单位为 mm。线段与条带边界的交点也参与取极值。默认使用整个选定轮廓。
+- `--ab-x-offsets A B` 分别移动自动计算的底边端点，单位为局部毫米。负值向左，正值向右。例如 `--ab-x-offsets -5 0` 仅向左扩展 A 端。两端不能相交或重合，上底也须保持正宽度。红、蓝线高度和斜边角度按原参数计算。
 - `--measure-z Z` 对导出后重新读取的 STL 进行 XY 截面验收，可重复指定多个局部 Z 位置，单位为 mm。位置须位于有效毛坯的 Z 包围盒内部。测量结果见 `validation_report.json` 中的 `exported_stl.section_measurements`。
 - `--connector connector.json` 在真实上切面添加一个凸柱或盲孔。JSON 格式见下方装配特征接口。
 - `--preview-3d` 生成静态三维预览。使用 `--visualize` 时需要可用的 Matplotlib 交互后端和桌面显示。窗口支持鼠标旋转、正视和侧视按钮，以及 `Offset`、`Angle` 滑块。点击 `Apply` 重算并写入指定输出目录。
@@ -87,7 +88,9 @@ assert first.section is second.section
 
 ### HTTP 裁剪接口
 
-`POST /api/clip` 的请求可选传入 `ab_z_range_mm`、`contour_index`、`measure_z_mm` 和 `transform`，成功时返回二进制 STL。使用相同请求体调用 `POST /api/measure-sections` 可获得 JSON，其中包含 A/B 三维坐标和回读截面尺寸，该入口要求至少一个测量位置。读取、裁剪或验收失败时返回 HTTP 422 和错误详情。
+`POST /api/clip` 的请求可选传入 `ab_z_range_mm`、`ab_x_offsets_mm`、`contour_index`、`measure_z_mm` 和 `transform`，成功时返回二进制 STL。使用相同请求体调用 `POST /api/measure-sections` 可获得 JSON，其中包含 A/B 三维坐标和回读截面尺寸，该入口要求至少一个测量位置。读取、裁剪或验收失败时返回 HTTP 422 和错误详情。
+
+`ab_x_offsets_mm` 的格式为 `[A偏移, B偏移]`，缺省为 `[0, 0]`。Python API 也接受此参数。先完成自动截面取点和可选 Z 条带选点，再调整 A/B 的 X 坐标。`a_section_xyz_mm`、`b_section_xyz_mm` 记录自动取到的截面点，测量接口的 `a_xy_mm`、`b_xy_mm` 记录用于裁剪的实际底角。
 
 `transform` 与 CLI 的 `--transform` 使用同一约定，传入按行排列的 4×4 右手刚体矩阵。原始 STL 坐标先按 `unit` 换算为毫米，再乘该矩阵转为加工坐标。矩阵末列前三项是毫米平移。省略该字段或传入 `null` 时使用单位矩阵。参考线高度、搜索条带和测量位置按加工坐标填写，成品 STL 会转回输入的坐标系及单位。
 

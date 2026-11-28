@@ -40,6 +40,38 @@
   transition: transform var(--carousel-duration) var(--carousel-easing);
 }
 
+.carousel-item {
+  position: relative;
+  flex: none;
+}
+
+.carousel-item-action {
+  position: absolute;
+  bottom: 24px;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #c6a096;
+  border-radius: 50%;
+  color: #8c312a;
+  background: #fff8f3;
+  font: 19px/1 system-ui, sans-serif;
+}
+
+.carousel-item-action:hover:not(:disabled) {
+  color: #fff;
+  background: #a13a32;
+  border-color: #a13a32;
+}
+
+.carousel-card[aria-pressed=false] + .carousel-item-action {
+  right: 14px;
+  bottom: 26px;
+}
+
 .carousel-card {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

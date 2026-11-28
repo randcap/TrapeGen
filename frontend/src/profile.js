@@ -18,16 +18,26 @@ export function checkProfile(params) {
   if (params.ab_z_range_mm && !validAbRange(params.ab_z_range_mm)) {
     return '请输入有效的 A/B 搜索范围，Z 下限须小于上限。'
   }
+  const abOffsets = params.ab_x_offsets_mm ?? [0, 0]
+  if (!Array.isArray(abOffsets) || abOffsets.length !== 2 || !abOffsets.every(Number.isFinite)) {
+    return '请输入有效的 A/B 底边端点偏移。'
+  }
   const red = yellow + offset
   if (!Number.isFinite(red) || blue - red <= COORDINATE_MM) return '蓝线必须高于红色截面。'
   return null
+}
+
+export function bottomEndpoints(params, { left, right }) {
+  const [a, b] = params.ab_x_offsets_mm ?? [0, 0]
+  return [left + a, right + b]
 }
 
 export function buildProfile(params, section) {
   const red = params.yellow + params.offset
   const slope = 1 / Math.tan(params.angle * Math.PI / 180)
   const inset = (params.blue - red) * slope
-  const { left, right } = section
-  if (right - left - 2 * inset <= COORDINATE_MM) return null
+  const [left, right] = bottomEndpoints(params, section)
+  const upperWidth = right - left - 2 * inset
+  if (!Number.isFinite(upperWidth) || upperWidth <= COORDINATE_MM) return null
   return { red, blue: params.blue, left, right, slope, topLeft: left + inset, topRight: right - inset }
 }

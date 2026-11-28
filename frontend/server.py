@@ -66,6 +66,7 @@ class Workspace:
             self.key = key
         result = self.generator.generate(offset_mm=float(params["offset"]), angle_deg=float(params["angle"]),
                                          compute_assembly=False,
+                                         ab_x_offsets_mm=params.get("ab_x_offsets_mm"),
                                          connector=None if surface_only else params.get("connector"))
         if surface_only:
             return self.generator.describe_connector_surface(result)
@@ -75,6 +76,9 @@ class Workspace:
         if measurements_only:
             response = {
                 "ab_z_range_mm": ab_range,
+                "ab_x_offsets_mm": result.parameters["ab_x_offsets_mm"],
+                "a_xy_mm": result.geometry_parameters.A,
+                "b_xy_mm": result.geometry_parameters.B,
                 "a_section_xyz_mm": result.geometry_parameters.a_section_xyz_mm,
                 "b_section_xyz_mm": result.geometry_parameters.b_section_xyz_mm,
                 "section_measurements": report["section_measurements"],

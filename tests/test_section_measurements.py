@@ -54,6 +54,39 @@ class SectionMeasurementTests(unittest.TestCase):
         settings = {"yellow_reference_y": -7.5, "blue_y": 10}
         return TrapezoidGenerator(self.source, **(settings | kwargs))
 
+    def test_bottom_endpoints_adjust_independently_to_keep_protrusions(self):
+        body = Manifold.cube((60, 50, 40), center=True)
+        left_ear = Manifold.cube((12, 4, 10), center=True).translate((-32, 6, 0))
+        right_ear = Manifold.cube((12, 4, 10), center=True).translate((32, 6, 0))
+        from_solid(body + left_ear + right_ear).export(self.source)
+        generator = self.generator(measure_z_mm=(0,))
+        baseline = generator.generate(compute_assembly=False)
+        left = generator.generate(
+            self.root / "left", ab_x_offsets_mm=(-15, 0), export_intermediate=False, compute_assembly=False,
+        )
+        right = generator.generate(ab_x_offsets_mm=(0, 15), compute_assembly=False)
+        self.assertIs(baseline.section, left.section)
+        self.assertIs(baseline.section, right.section)
+        self.assertEqual(left.geometry_parameters.A, (-45, 0))
+        self.assertEqual(left.geometry_parameters.B, baseline.geometry_parameters.B)
+        self.assertEqual(left.geometry_parameters.a_section_xyz_mm, baseline.geometry_parameters.a_section_xyz_mm)
+        self.assertEqual(right.geometry_parameters.A, baseline.geometry_parameters.A)
+        self.assertEqual(right.geometry_parameters.B, (45, 0))
+        self.assertAlmostEqual(left.geometry_parameters.C[0], baseline.geometry_parameters.C[0] - 15)
+        self.assertAlmostEqual(right.geometry_parameters.D[0], baseline.geometry_parameters.D[0] + 15)
+        np.testing.assert_allclose(baseline.result_mesh.bounds[:, 0], [-30, 30])
+        np.testing.assert_allclose(left.result_mesh.bounds[:, 0], [-38, 30])
+        np.testing.assert_allclose(right.result_mesh.bounds[:, 0], [-30, 38])
+        self.assertAlmostEqual(left.validation_report["result"]["lower_volume_difference_mm3"], 0)
+        self.assertTrue(left.validation_report["exported_stl"]["section_measurements"])
+        self.assertEqual(generator.generate(ab_x_offsets_mm=(0, 0)).geometry_parameters, baseline.geometry_parameters)
+        with self.assertRaisesRegex(GeometryError, "must stay to the left"):
+            generator.generate(ab_x_offsets_mm=(60, 0))
+        with self.assertRaisesRegex(GeometryError, "upper base"):
+            generator.generate(ab_x_offsets_mm=(50, 0))
+        with self.assertRaisesRegex(GeometryError, "offsets"):
+            generator.generate(ab_x_offsets_mm=(float("nan"), 0))
+
     def test_ab_band_interpolates_true_contour_edges_and_preserves_lower_material(self):
         outline = Polygon([(-30, -20), (30, -20), (30, 0), (50, 20), (-30, 20)])
         mesh = trimesh.creation.extrude_polygon(outline, 50, engine="earcut")
@@ -292,3 +325,31 @@ class SectionMeasurementTests(unittest.TestCase):
         })
         self.assertEqual(status, 422)
         self.assertIn(b"Connector must fit inside", response)
+
+    def test_http_bottom_offsets_match_surface_and_export(self):
+        workspace = Workspace(self.root)
+        source = trimesh.creation.box([60, 50, 40]).export(file_type="stl")
+        status, _, response = post(workspace, "/api/upload", source, "application/octet-stream")
+        self.assertEqual(status, 200)
+        request = {
+            **json.loads(response), "unit": "mm", "yellow": -7.5, "blue": 10, "union": False,
+            "offset": 7.5, "angle": 53, "ab_x_offsets_mm": [-4, 0],
+        }
+        status, _, response = post(workspace, "/api/connector-surface", request)
+        self.assertEqual(status, 200)
+        surface = json.loads(response)
+        x = [point[0] for point in surface["regions"][0]["outline_xz_mm"]]
+        status, _, response = post(workspace, "/api/measure-sections", {**request, "measure_z_mm": [0]})
+        self.assertEqual(status, 200)
+        measured = json.loads(response)
+        self.assertEqual(measured["a_xy_mm"], [-34, 0])
+        self.assertEqual(measured["b_xy_mm"], [30, 0])
+        self.assertEqual(measured["a_section_xyz_mm"][0], -30)
+        status, _, response = post(workspace, "/api/clip", request)
+        self.assertEqual(status, 200)
+        mesh = trimesh.load_mesh(BytesIO(response), file_type="stl")
+        top = mesh.vertices[mesh.vertices[:, 1] == 10, 0]
+        np.testing.assert_allclose([top.min(), top.max()], [min(x), max(x)], atol=1e-6)
+        status, _, response = post(workspace, "/api/clip", {**request, "ab_x_offsets_mm": [65, 0]})
+        self.assertEqual(status, 422)
+        self.assertIn(b"must stay to the left", response)

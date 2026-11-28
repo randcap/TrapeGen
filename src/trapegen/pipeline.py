@@ -13,7 +13,7 @@ from .config import DEFAULT_ANGLE, DEFAULT_OFFSET, Frame, GeometryError, Toleran
 from .connector import AppliedConnector, apply_connector, describe_surface, parse_connector, validate_connector
 from .mesh import from_solid, intersect, load_stl, prepare_solid, require_mesh, to_solid, validate_result
 from .profile import Section, Trapezoid, build_keep, build_trapezoid, check_parameters, extrude, slice_mesh
-from .sections import compare_export_sections, normalize_ab_range, normalize_measure_depths
+from .sections import compare_export_sections, normalize_ab_range, normalize_ab_x_offsets, normalize_measure_depths
 
 
 @dataclass
@@ -52,7 +52,7 @@ class TrapezoidGenerator:
         self, stl_path, igs_path=None, *, yellow_reference_y, blue_y=None,
         transform=None, stl_unit="mm", reference_index=None, contour_index=None,
         iges_backend="occt", union_overlapping_shells=False, tolerances=None,
-        ab_z_range_mm=None, measure_z_mm=None, connector=None,
+        ab_z_range_mm=None, measure_z_mm=None, connector=None, ab_x_offsets_mm=None,
     ):
         from .reference import BlueReference, load_igs_reference
 
@@ -68,6 +68,7 @@ class TrapezoidGenerator:
         self.yellow_y = float(yellow_reference_y)
         self.contour_index = int(contour_index) if contour_index is not None else None
         self.ab_z_range_mm = normalize_ab_range(ab_z_range_mm)
+        self.ab_x_offsets_mm = normalize_ab_x_offsets(ab_x_offsets_mm)
         self.connector = parse_connector(connector)
         self.stl_path = Path(stl_path)
         self.igs_path = Path(igs_path) if igs_path is not None else None
@@ -90,8 +91,10 @@ class TrapezoidGenerator:
     def generate(
         self, output_dir=None, *, offset_mm=DEFAULT_OFFSET, angle_deg=DEFAULT_ANGLE,
         margin_mm=1.0, export_intermediate=True, compute_assembly=True, visualize=False, connector=None,
+        ab_x_offsets_mm=None,
     ):
         spec = self.connector if connector is None else parse_connector(connector)
+        x_offsets = self.ab_x_offsets_mm if ab_x_offsets_mm is None else normalize_ab_x_offsets(ab_x_offsets_mm)
         offset_mm, angle_deg, margin_mm = map(float, (offset_mm, angle_deg, margin_mm))
         tol = self.tolerances
         y_red = check_parameters(self.blue.y_mm, self.yellow_y, offset_mm, angle_deg, margin_mm, tol)
@@ -100,7 +103,8 @@ class TrapezoidGenerator:
             section = slice_mesh(self.effective_mesh, y_red, self.contour_index, tol)
             self._section = section
         geometry, profile = build_trapezoid(
-            section, self.blue.y_mm, angle_deg, tol, ab_z_range_mm=self.ab_z_range_mm
+            section, self.blue.y_mm, angle_deg, tol,
+            ab_z_range_mm=self.ab_z_range_mm, ab_x_offsets_mm=x_offsets,
         )
         keep_profile = build_keep(geometry, self.bounds, margin_mm)
         z_start = float(self.bounds[0, 2] - margin_mm)
@@ -158,6 +162,7 @@ class TrapezoidGenerator:
                 "section_contour_index": section.contour_index,
                 "section_areas_mm2": section.contour_areas_mm2,
                 "ab_z_range_mm": self.ab_z_range_mm,
+                "ab_x_offsets_mm": x_offsets,
                 "a_section_xyz_mm": geometry.a_section_xyz_mm,
                 "b_section_xyz_mm": geometry.b_section_xyz_mm,
                 "measure_z_mm": self.measure_z_mm,
@@ -224,7 +229,7 @@ def generate_trapezoid_region(
     stl_unit="mm", export_intermediate=True, visualize=False, blue_y=None,
     reference_index=None, contour_index=None, iges_backend="occt",
     union_overlapping_shells=False, tolerances=None, compute_assembly=True,
-    ab_z_range_mm=None, measure_z_mm=None, connector=None,
+    ab_z_range_mm=None, measure_z_mm=None, connector=None, ab_x_offsets_mm=None,
 ):
     """One-shot API. Use TrapezoidGenerator when iterating on the same inputs."""
     if yellow_reference_y is None:
@@ -235,6 +240,7 @@ def generate_trapezoid_region(
         contour_index=contour_index, iges_backend=iges_backend,
         union_overlapping_shells=union_overlapping_shells, tolerances=tolerances,
         ab_z_range_mm=ab_z_range_mm, measure_z_mm=measure_z_mm, connector=connector,
+        ab_x_offsets_mm=ab_x_offsets_mm,
     )
     return generator.generate(
         output_dir, offset_mm=offset_mm, angle_deg=angle_deg, margin_mm=margin_mm,

@@ -18,6 +18,31 @@
     <input id="file" type="file" accept=".stl" multiple hidden>
   </header>
   <div id="model-picker" class="model-picker" popover></div>
+  <dialog id="model-delete" class="model-delete" aria-labelledby="model-delete-title" aria-describedby="model-delete-name model-delete-warning">
+    <form method="dialog">
+      <h2 id="model-delete-title">删除暂存模型？</h2>
+      <p id="model-delete-name"></p>
+      <p id="model-delete-warning">该 STL 的页面缓存和编辑参数将被清除，无法恢复。</p>
+      <p id="model-delete-export" hidden>已发起的导出仍会完成。</p>
+      <div class="model-delete-actions">
+        <button value="cancel" autofocus>取消</button>
+        <button value="delete" class="danger">删除模型</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="slider-range" class="slider-range-dialog" aria-labelledby="slider-range-title">
+    <form>
+      <h2 id="slider-range-title">滑块范围</h2>
+      <label for="slider-range-min">最小值 <input id="slider-range-min" name="min" type="number" step="any" required></label>
+      <label for="slider-range-max">最大值 <input id="slider-range-max" name="max" type="number" step="any" required></label>
+      <label for="slider-range-step">步长 <input id="slider-range-step" name="step" type="number" step="any" required></label>
+      <p id="slider-range-error" role="status"></p>
+      <div class="slider-range-actions">
+        <button id="slider-range-cancel" type="button">取消</button>
+        <button class="primary" type="submit">应用范围</button>
+      </div>
+    </form>
+  </dialog>
   <section id="pose-controls" class="pose-panel" popover aria-labelledby="pose-title">
     <h2 id="pose-title">模型摆正</h2>
     <label for="pose-step">每次旋转 <span><input id="pose-step" type="number" min="0" step="any" value="90"> °</span></label>
@@ -89,10 +114,42 @@
             <label><span><i class="swatch yellow"></i>黄线 Y</span><span><input id="yellow" type="number" step="any" value="69"> mm</span></label>
             <label><span><i class="swatch blue"></i>蓝线 Y</span><span><input id="blue" type="number" step="any" value="87"> mm</span></label>
             <h3>梯形参数</h3>
-            <label for="offset"><span><i class="swatch red"></i>向上偏移</span><output id="offsetValue"></output></label>
-            <input id="offset" type="range" min="5" max="10" step=".1" value="7.5">
-            <label for="angle"><span><i class="swatch violet"></i>斜边角度</span><output id="angleValue"></output></label>
-            <input id="angle" type="range" min="52" max="55" step=".1" value="53">
+            <div class="parameter-control" data-parameter="向上偏移">
+              <div class="parameter-value"><label for="offset-value"><i class="swatch red"></i>向上偏移</label>
+                <button type="button" data-nudge="-1" aria-label="减小向上偏移">−</button>
+                <input id="offset-value" type="number" step="any" value="7.5"><span>mm</span>
+                <button type="button" data-nudge="1" aria-label="增大向上偏移">+</button>
+              </div>
+              <div class="parameter-slider"><input id="offset" type="range" min="5" max="10" step=".1" value="7.5" aria-label="向上偏移滑块">
+                <button type="button" data-range aria-label="设置向上偏移范围">范围</button>
+              </div>
+            </div>
+            <div class="parameter-control" data-parameter="斜边角度">
+              <div class="parameter-value"><label for="angle-value"><i class="swatch violet"></i>斜边角度</label>
+                <button type="button" data-nudge="-1" aria-label="减小斜边角度">−</button>
+                <input id="angle-value" type="number" step="any" value="53"><span>°</span>
+                <button type="button" data-nudge="1" aria-label="增大斜边角度">+</button>
+              </div>
+              <div class="parameter-slider"><input id="angle" type="range" min="52" max="55" step=".1" value="53" aria-label="斜边角度滑块">
+                <button type="button" data-range aria-label="设置斜边角度范围">范围</button>
+              </div>
+            </div>
+            <div class="parameter-control" data-parameter="底边左端 A 偏移" data-step="0.1">
+              <div class="parameter-value"><label for="ab-x-left">底边左端 A 偏移</label>
+                <button type="button" data-nudge="-1" aria-label="减小 A 偏移">−</button>
+                <input id="ab-x-left" type="number" step="any" value="0"><span>mm</span>
+                <button type="button" data-nudge="1" aria-label="增大 A 偏移">+</button>
+              </div>
+            </div>
+            <div class="parameter-control" data-parameter="底边右端 B 偏移" data-step="0.1">
+              <div class="parameter-value"><label for="ab-x-right">底边右端 B 偏移</label>
+                <button type="button" data-nudge="-1" aria-label="减小 B 偏移">−</button>
+                <input id="ab-x-right" type="number" step="any" value="0"><span>mm</span>
+                <button type="button" data-nudge="1" aria-label="增大 B 偏移">+</button>
+              </div>
+            </div>
+            <small>相对自动取点，负值向左，正值向右。</small>
+            <button id="ab-x-reset" type="button">恢复自动底边</button>
             <label class="check"><input id="ab-enabled" type="checkbox" aria-controls="ab-controls"> A/B 前后搜索条带</label>
             <div id="ab-controls" hidden>
               <label for="ab-min">Z 下限 <span><input id="ab-min" type="number" step="any"> mm</span></label>
@@ -101,10 +158,16 @@
               <input id="ab-max-slider" type="range" step="any" aria-label="拖动 Z 上限">
             </div>
             <label class="check"><input id="union" type="checkbox" checked> 合并重叠外壳</label>
-            <label for="opacity">
-              <span><i class="swatch removed"></i>待裁剪区不透明度</span><output id="opacityValue">20%</output>
-            </label>
-            <input id="opacity" type="range" min="0" max="100" step="1" value="20">
+            <div class="parameter-control" data-parameter="待裁剪区不透明度">
+              <div class="parameter-value"><label for="opacity-value"><i class="swatch removed"></i>待裁剪区不透明度</label>
+                <button type="button" data-nudge="-1" aria-label="减小不透明度">−</button>
+                <input id="opacity-value" type="number" step="any" value="20"><span>%</span>
+                <button type="button" data-nudge="1" aria-label="增大不透明度">+</button>
+              </div>
+              <div class="parameter-slider"><input id="opacity" type="range" min="0" max="100" step="1" value="20" aria-label="不透明度滑块">
+                <button type="button" data-range aria-label="设置不透明度范围">范围</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

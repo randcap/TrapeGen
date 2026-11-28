@@ -64,3 +64,20 @@ test('uses the red section, symmetric inset and positive upper width', () => {
   assert.match(checkProfile({ ...params, blue: 76 }), /蓝线必须高于/)
   assert.match(checkProfile({ ...params, ab_z_range_mm: [11, 6] }), /下限须小于上限/)
 })
+
+test('adjusts each bottom endpoint from its automatic position and rejects crossing', () => {
+  const params = { yellow: -7.5, blue: 10, offset: 7.5, angle: 53, unit: 'mm' }
+  const section = { left: -30, right: 30 }
+  const baseline = buildProfile(params, section)
+  const left = buildProfile({ ...params, ab_x_offsets_mm: [-15, 0] }, section)
+  assert.equal(left.left, -45)
+  assert.equal(left.right, baseline.right)
+  assert.ok(Math.abs(left.topLeft - (baseline.topLeft - 15)) < 1e-9)
+  const right = buildProfile({ ...params, ab_x_offsets_mm: [0, 15] }, section)
+  assert.equal(right.left, baseline.left)
+  assert.equal(right.right, 45)
+  assert.ok(Math.abs(right.topRight - (baseline.topRight + 15)) < 1e-9)
+  assert.equal(buildProfile({ ...params, ab_x_offsets_mm: [60, 0] }, section), null)
+  assert.equal(buildProfile({ ...params, ab_x_offsets_mm: [50, 0] }, section), null)
+  assert.match(checkProfile({ ...params, ab_x_offsets_mm: [NaN, 0] }), /端点偏移/)
+})

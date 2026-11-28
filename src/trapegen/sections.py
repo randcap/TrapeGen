@@ -66,6 +66,15 @@ def normalize_ab_range(values):
     return values
 
 
+def normalize_ab_x_offsets(values):
+    if values is None:
+        return (0.0, 0.0)
+    offsets = _finite_values(values, "A/B X offsets")
+    if len(offsets) != 2:
+        raise GeometryError("A/B X offsets must contain two values in local mm.")
+    return offsets
+
+
 def normalize_measure_depths(values, bounds):
     if values is None:
         return ()

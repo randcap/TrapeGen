@@ -26,6 +26,8 @@ def main(argv=None):
     parser.add_argument("--contour-index", type=int, help="Zero-based section contour, largest first.")
     parser.add_argument("--ab-z-range", type=float, nargs=2, metavar=("MIN", "MAX"),
                         help="Restrict A/B search on the selected contour to this local Z band (mm).")
+    parser.add_argument("--ab-x-offsets", type=float, nargs=2, metavar=("A", "B"),
+                        help="Signed local X offsets (mm) from the automatically selected bottom endpoints.")
     parser.add_argument("--measure-z", type=float, action="append", metavar="Z",
                         help="Validate and report an XY section of the exported STL at local Z (mm). Repeatable.")
     parser.add_argument("--iges-backend", choices=("occt", "line"), default="occt")
@@ -46,6 +48,7 @@ def main(argv=None):
             contour_index=args.contour_index, iges_backend=args.iges_backend,
             union_overlapping_shells=args.union_overlapping_shells,
             ab_z_range_mm=args.ab_z_range, measure_z_mm=args.measure_z, connector=connector,
+            ab_x_offsets_mm=args.ab_x_offsets,
         )
         result = generator.generate(
             args.output, offset_mm=args.offset, angle_deg=args.angle, margin_mm=args.margin,
