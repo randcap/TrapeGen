@@ -18,6 +18,7 @@ body {
 }
 
 header {
+  position: relative;
   height: 72px;
   padding: 0 4vw;
   display: flex;
@@ -63,8 +64,103 @@ button:disabled {
   cursor: default;
 }
 
-header button {
+.header-actions {
   margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+#model-picker-toggle {
+  position: absolute;
+  z-index: 3;
+  top: 17px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 36px;
+  padding: 0;
+  border-color: #abc4b9;
+  border-radius: 18px;
+  background: #edf7f0ed;
+  color: var(--accent);
+  box-shadow: 0 2px 8px #243a3020;
+}
+
+#model-picker-toggle span {
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+  border-top: 7px solid currentColor;
+  border-bottom: 0;
+  color: inherit;
+}
+
+#model-picker-toggle[aria-expanded=true] span {
+  transform: rotate(180deg);
+}
+
+.model-picker {
+  inset: 63px 0 auto;
+  width: min(640px, calc(100% - 24px));
+  margin: 0 auto;
+  padding: 0;
+  border: 1px solid #abc4b9;
+  border-radius: 11px;
+  background: #edf7f0ed;
+  box-shadow: 0 6px 24px #243a3035;
+}
+
+.pose-panel {
+  inset: 61px 4vw auto auto;
+  margin: 0;
+  width: min(260px, 92vw);
+  padding: 16px;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #c5d1ca;
+  border-radius: 8px;
+  box-shadow: 0 8px 26px #192c2a26;
+}
+
+.pose-panel h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.pose-axes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pose-axes > div {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  text-align: center;
+}
+
+.pose-axes span {
+  grid-column: span 2;
+  font-weight: 600;
+}
+
+.pose-axes button {
+  padding: 6px 0;
+}
+
+.pose-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.pose-footer button {
+  padding: 6px 9px;
 }
 
 main {
@@ -143,6 +239,28 @@ h1 {
   left: 32px;
 }
 
+.connector-palette {
+  position: absolute;
+  z-index: 2;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  max-width: 630px;
+  margin: 0 auto;
+  border: 1px solid #abc4b9;
+  border-radius: 11px;
+  background: #edf7f0e8;
+  box-shadow: 0 4px 18px #243a3030;
+}
+
+.connector-active .tools, .connector-active #compare {
+  bottom: 166px;
+}
+
+.connector-active .hint {
+  bottom: 143px;
+}
+
 .comparison-inset {
   position: absolute;
   z-index: 1;
@@ -205,7 +323,7 @@ h1 {
   transform: rotate(45deg);
 }
 
-#toggle-preview[aria-expanded=false] .toggle-chevron {
+#toggle-preview[aria-expanded=false] .toggle-chevron, .connector-panel:not([open]) .toggle-chevron {
   margin-top: -4px;
   transform: rotate(225deg);
 }
@@ -236,8 +354,86 @@ h1 {
   border-bottom-left-radius: 8px;
 }
 
-.preview-collapsed .preview-body {
+.crop-collapsed .preview-body {
   grid-template-rows: 0fr;
+}
+
+.connector-panel {
+  margin-top: 12px;
+  border-top: 1px solid #dce3dd;
+}
+
+.connector-panel summary {
+  padding: 10px 0 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.connector-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+#connector-status, #connector-file-info {
+  display: block;
+  margin-top: 7px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#connector-status[data-state=warning], #connector-file-info[data-state=warning] {
+  color: #864212;
+}
+
+#connector-status[data-state=pending] {
+  color: #526667;
+}
+
+.connector-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+
+.connector-fields label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.connector-fields input {
+  width: min(74px, 74%);
+}
+
+#connector-retry {
+  margin-top: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.connector-import {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.connector-import button {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.connector-import #connector-file-info {
+  min-width: 0;
+  margin-top: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -278,6 +474,7 @@ h3 {
   margin-top: 5px;
   color: #566963;
   font-size: 12px;
+  white-space: pre-line;
 }
 
 .swatch {
@@ -321,9 +518,22 @@ input[type=range] {
   accent-color: var(--accent);
 }
 
+input[type=checkbox] {
+  accent-color: var(--accent);
+}
+
 .check {
   justify-content: flex-start;
   gap: 8px;
+}
+
+#ab-controls {
+  border-left: 2px solid #32897b;
+  padding: 2px 0 5px 12px;
+}
+
+#ab-controls label {
+  margin: 4px 0;
 }
 
 output {
@@ -346,13 +556,47 @@ output {
 }
 
 #status {
+  margin: 10px 0 0;
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+#status:empty {
+  display: none;
 }
 
 #stage.drag {
   outline: 3px dashed var(--accent);
   outline-offset: -5px;
+}
+
+@media (min-width: 761px) {
+  main {
+    height: calc(100dvh - 72px);
+    min-height: 520px;
+  }
+  main:not(.preview-collapsed) .preview-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .preview-body {
+    min-height: 0;
+  }
+  .preview-content {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .preview-settings {
+    min-height: 0;
+    overflow-y: auto;
+    margin-right: -12px;
+    padding-right: 12px;
+  }
+  .connector-settings {
+    max-height: 36dvh;
+    overflow-y: auto;
+  }
 }
 
 @media(max-width:760px) {
@@ -377,7 +621,14 @@ output {
   }
 }
 
+@media (max-width: 570px) {
+  .workbench-label { display: none; }
+}
+
 @media (max-width: 480px) {
+  .header-actions button { padding-inline: 8px; }
+  #model-picker-toggle { top: 82px; }
+  .model-picker { inset-block-start: 123px; --model-card-width: 116px; }
   .comparison-inset {
     top: 12px;
     width: 106px;
@@ -389,6 +640,17 @@ output {
     white-space: nowrap;
   }
   .edit-tools { top: 144px; }
+  .tools button { padding: 8px; }
   .preview-collapsed .preview-panel { width: min(150px, 100%); padding: 12px; }
   .preview-collapsed #toggle-preview { font-size: 16px; }
+  .preview-collapsed .connector-panel summary { font-size: 14px; }
+  .connector-palette .carousel-selector {
+    --carousel-item-width: 84px;
+    --carousel-item-height: 84px;
+    --carousel-arrow-width: 30px;
+    --carousel-gap: 6px;
+    padding: 5px;
+  }
+  .connector-active .tools, .connector-active #compare { bottom: 137px; }
+  .connector-active .hint { bottom: 113px; }
 }

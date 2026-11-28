@@ -7,5 +7,6 @@ self.onmessage = ({ data }) => {
     return
   }
   const { key, red, scale } = data
-  self.postMessage({ key, ...sliceSection(mesh, red, scale) })
+  const section = sliceSection(mesh, red, scale)
+  self.postMessage({ key, ...section }, section.outline ? [section.outline.buffer] : [])
 }

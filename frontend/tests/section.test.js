@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BoxGeometry } from 'three'
 import { buildProfile, checkProfile } from '../src/profile.js'
-import { prepareSectionMesh, sliceSection } from '../src/section.js'
+import { prepareSectionMesh, selectAb, sliceSection } from '../src/section.js'
 
 function box(width, height, depth, x = 0) {
   return new BoxGeometry(width, height, depth).toNonIndexed().translate(x, 0, 0)
@@ -10,7 +10,10 @@ function box(width, height, depth, x = 0) {
 }
 
 function slice(positions, height = 0, scale = 1) {
-  return sliceSection(prepareSectionMesh(positions), height, scale)
+  const section = sliceSection(prepareSectionMesh(positions), height, scale)
+  if (!section.outline) return section
+  const { left, right } = selectAb(section.outline)
+  return { left, right }
 }
 
 test('maps raw STL units to the same millimeter section', () => {
@@ -34,6 +37,22 @@ test('follows the positive-side convention for a plane through triangle edges', 
   assert.deepEqual(slice(geometry.attributes.position.array), { left: -10, right: 10 })
 })
 
+test('interpolates exterior edges at both search limits before selecting A/B', () => {
+  const outline = [-30, -20, 30, -20, 30, 0, 50, 20, -30, 20]
+  assert.equal(selectAb(outline).b.x, 50)
+  const narrowed = selectAb(outline, [6, 11])
+  assert.equal(narrowed.a.x, -30)
+  assert.deepEqual(narrowed.b, { x: 41, z: 11 })
+  assert.deepEqual(narrowed.segments, [36, 6, 41, 11, -30, 11, -30, 6])
+  assert.deepEqual(selectAb(outline, [20, 25]).b, { x: 50, z: 20 })
+})
+
+test('does not select A/B from point contacts or a band outside the contour', () => {
+  const outline = [-3, -4, 3, -4, 0, 4]
+  assert.match(selectAb(outline, [4, 6]).message, /没有有效/)
+  assert.match(selectAb(outline, [8, 9]).message, /没有有效/)
+})
+
 test('uses the red section, symmetric inset and positive upper width', () => {
   const params = { yellow: 69, blue: 87, offset: 7.5, angle: 53, unit: 'cm' }
   assert.equal(checkProfile(params), null)
@@ -43,4 +62,5 @@ test('uses the red section, symmetric inset and positive upper width', () => {
   assert.ok(Math.abs(profile.topLeft + 30 - 10.5 / Math.tan(53 * Math.PI / 180)) < 1e-10)
   assert.equal(buildProfile(params, { left: -1, right: 1 }), null)
   assert.match(checkProfile({ ...params, blue: 76 }), /蓝线必须高于/)
+  assert.match(checkProfile({ ...params, ab_z_range_mm: [11, 6] }), /下限须小于上限/)
 })

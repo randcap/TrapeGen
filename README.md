@@ -31,6 +31,9 @@ trapegen --stl data/stl/part.stl --igs data/igs/blue.igs \
 - `--unit` 声明 STL 长度单位，支持 `mm`、`cm`、`m`、`in`。IGES 单位由文件头独立确定。
 - `--transform frame.json` 接受 4×4 右手刚体变换矩阵，将已换算成毫米的原始坐标变换至局部坐标，平移也以 mm 表示。局部 X 向右，Y 向上，Z 沿前后方向。未提供矩阵时使用单位变换。
 - `--reference-index` 选择零起始的 IGES 边，`--contour-index` 选择有效截面外轮廓，按 XZ 面积降序排列，同面积按包围盒排序。出现多个候选时需显式指定。
+- `--ab-z-range MIN MAX` 在选定的红线截面外轮廓上，将 A/B 取点限制在给定的局部 Z 范围内，单位为 mm。线段与条带边界的交点也参与取极值。默认使用整个选定轮廓。
+- `--measure-z Z` 对导出后重新读取的 STL 进行 XY 截面验收，可重复指定多个局部 Z 位置，单位为 mm。位置须位于有效毛坯的 Z 包围盒内部。测量结果见 `validation_report.json` 中的 `exported_stl.section_measurements`。
+- `--connector connector.json` 在真实上切面添加一个凸柱或盲孔。JSON 格式见下方装配特征接口。
 - `--preview-3d` 生成静态三维预览。使用 `--visualize` 时需要可用的 Matplotlib 交互后端和桌面显示。窗口支持鼠标旋转、正视和侧视按钮，以及 `Offset`、`Angle` 滑块。点击 `Apply` 重算并写入指定输出目录。
 - `--no-intermediate` 只写最终 STL 和参数、验收 JSON。添加 `--no-assembly` 可省去独立装配区域的布尔交集。
 - `--iges-backend line` 读取测试用的 ASCII IGES Type 110 直线，要求标准分隔符、单位模型比例且边无 IGES 实体变换。正式 IGES 默认使用 Open CASCADE。
@@ -47,6 +50,15 @@ trapegen --stl data/stl/xiong.stl --igs data/igs/xiong-blue-demo.igs \
 ```
 
 样件演示按厘米解释原始 STL 坐标。黄线取两眼中心附近的 Y = 69 mm，红线位于 Y = 76.5 mm，临时蓝线位于 Y = 87 mm。该 STL 有 19 个相互重叠的外壳，演示显式执行外壳并集。原始输入文件保留。
+
+可按以下命令使用窄条带选点，并回读三个前后位置的成品截面。
+
+```bash
+source .venv/bin/activate
+trapegen --stl data/stl/xiong.stl --igs data/igs/xiong-blue-demo.igs \
+  --unit cm --yellow-y 69 --union-overlapping-shells --ab-z-range -12 12 \
+  --measure-z -20 --measure-z 0 --measure-z 20 --output output/xiong-sections
+```
 
 ## Python API
 
@@ -70,6 +82,58 @@ assert first.section is second.section
 ```
 
 生成器缓存原始网格、IGES 参考线、变换、包围盒和最近的截面。调角度时复用截面，调偏移时重切截面。每次布尔交集都使用同一个经过输入验证的实体。通过 `Tolerances` 可覆盖集中定义的数值阈值。
+
+两个 Python 入口都可传入 `ab_z_range_mm=(-12, 12)` 和 `measure_z_mm=[-20, 0, 20]`。导出时自动回读指定位置，也可用 `generator.validate_export(path, result, measure_z_mm=[...])` 测量已有成品。A/B 在原三维截面上的实际取点坐标记录在 `geometry_parameters` 和 `parameters.json` 的 `a_section_xyz_mm`、`b_section_xyz_mm` 字段。
+
+### HTTP 裁剪接口
+
+`POST /api/clip` 的请求可选传入 `ab_z_range_mm`、`contour_index`、`measure_z_mm` 和 `transform`，成功时返回二进制 STL。使用相同请求体调用 `POST /api/measure-sections` 可获得 JSON，其中包含 A/B 三维坐标和回读截面尺寸，该入口要求至少一个测量位置。读取、裁剪或验收失败时返回 HTTP 422 和错误详情。
+
+`transform` 与 CLI 的 `--transform` 使用同一约定，传入按行排列的 4×4 右手刚体矩阵。原始 STL 坐标先按 `unit` 换算为毫米，再乘该矩阵转为加工坐标。矩阵末列前三项是毫米平移。省略该字段或传入 `null` 时使用单位矩阵。参考线高度、搜索条带和测量位置按加工坐标填写，成品 STL 会转回输入的坐标系及单位。
+
+以下请求使用内置小熊。自定义模型可将 `model` 换成上传接口返回的标识。黄、蓝参考高度、偏移、条带和测量位置均使用局部毫米，角度单位为度。
+
+```json
+{
+  "model": "xiong",
+  "unit": "cm",
+  "yellow": 69,
+  "blue": 87,
+  "offset": 7.5,
+  "angle": 53,
+  "union": true,
+  "ab_z_range_mm": [-12, 12],
+  "measure_z_mm": [-20, 0, 20]
+}
+```
+
+### 装配特征接口
+
+在 `POST /api/clip` 的现有请求中附加可选的 `connector` 对象。Python 可将同一个字典传给 `TrapezoidGenerator(..., connector=...)`、`generator.generate(connector=...)` 或 `generate_trapezoid_region(..., connector=...)`。CLI 的 `--connector` 文件仅包含该对象。省略对象时导出常规裁剪件。
+
+```json
+{
+  "preset": "hexagonal_hole",
+  "size_mm": 8,
+  "depth_mm": 6,
+  "angle_deg": 0,
+  "offset_xz_mm": [0, 0]
+}
+```
+
+| 形状 | 凸柱预设 | 盲孔预设 | `size_mm` 含义 |
+| --- | --- | --- | --- |
+| 圆形 | `circular_post` | `circular_hole` | 直径，圆周以 64 边离散 |
+| 正三角形 | `triangular_post` | `triangular_hole` | 边长 |
+| 正六边形 | `hexagonal_post` | `hexagonal_hole` | 边长 |
+| 自定义 | `custom_post` | `custom_hole` | 旋转前轮廓包围盒的最大边长 |
+
+- `depth_mm` 对凸柱表示向局部 +Y 的高度，对孔表示向 −Y 的盲孔深度。`angle_deg` 按局部 +Y 右手方向旋转，缺省为 0°。预设的首个顶点默认沿 +X。
+- `offset_xz_mm` 以实际蓝切面最大连通材料区域的面积中心为基准，缺省为 `[0, 0]`。如果中心落在空洞中，可用偏移移到材料上。
+- 自定义预设要求 `profile_xz`，内容是沿轮廓顺序排列的 3–128 个二维点，例如 `[[0,0],[2,0],[2,1],[1,2],[0,1]]`。轮廓自动闭合，允许凹多边形。源坐标是相对比例，后端先按面积中心居中、等比缩放，再应用旋转、偏移。
+- `POST /api/connector-surface` 使用与裁剪相同的模型、姿态和梯形参数，返回 `blue_y_mm`、默认 `center_xz_mm` 及 `regions`。每个区域包含 `outline_xz_mm` 和 `holes_xz_mm`，环坐标省略重复的闭合点。这个接口计算实际基体切面，可供前端选择特征位置。
+- `POST /api/measure-sections` 同样接受 `connector`，会按成品形状验证指定 Z 截面，其 `connector` 字段包含定位、轮廓、回读端面高度和增减体积。CLI 报告对应字段为 `exported_stl.connector`。
+- 切面不存在、特征超出材料、盲孔钻穿外壳或贯通已有空腔时，后端返回 HTTP 422 与错误详情。实际配合间隙由两件各自的尺寸决定。
 
 ## 输出文件
 

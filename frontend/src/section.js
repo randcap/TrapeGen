@@ -119,13 +119,46 @@ function traceContours(vertices, edges) {
     rings.slice(0, i).filter(candidate => inside(ring.points[0], candidate.points)).length % 2 === 0
   )
   if (regions.length !== 1) return failure(`截面有 ${regions.length} 个独立轮廓，无法自动选择外轮廓。`)
-  let left = Infinity
-  let right = -Infinity
-  for (const p of regions[0].points) {
-    left = Math.min(left, p.x)
-    right = Math.max(right, p.x)
+  return { outline: new Float64Array(regions[0].points.flatMap(({ x, z }) => [x, z])) }
+}
+
+export function selectAb(outline, range = null) {
+  const segments = []
+  let a = null
+  let b = null
+  for (let i = 0; i < outline.length; i += 2) {
+    const next = (i + 2) % outline.length
+    const x = outline[i]
+    const z = outline[i + 1]
+    const dx = outline[next] - x
+    const dz = outline[next + 1] - z
+    if (!dx && !dz) continue
+    let start = 0
+    let end = 1
+    if (range) {
+      if (dz === 0) {
+        if (z < range[0] || z > range[1]) continue
+      } else {
+        const front = (range[0] - z) / dz
+        const rear = (range[1] - z) / dz
+        start = Math.max(0, Math.min(front, rear))
+        end = Math.min(1, Math.max(front, rear))
+        if (end <= start) continue // A point contact has no eligible contour segment.
+      }
+    }
+    for (const t of [start, end]) {
+      const point = { x: x + t * dx, z: z + t * dz }
+      if (range) {
+        point.z = Math.max(range[0], Math.min(range[1], point.z))
+        segments.push(point.x, point.z)
+      }
+      if (!a || point.x < a.x) a = point
+      if (!b || point.x > b.x) b = point
+    }
   }
-  return right - left > COORDINATE_MM ? { left, right } : failure('截面宽度过小。')
+  if (!a) return failure('搜索条带内没有有效的外轮廓线段。')
+  if (b.x - a.x <= COORDINATE_MM) return { message: '搜索范围内 X 宽度过小。', segments }
+  return { left: a.x, right: b.x, a, b, segments }
 }
 
 export function sliceSection(mesh, yMm, scale) {

@@ -1,18 +1,25 @@
 import { createViewer } from './viewer.js'
-import { buildProfile, checkProfile } from './profile.js'
+import { buildProfile, checkProfile, UNIT_TO_MM } from './profile.js'
+import { selectAb } from './section.js'
 import { createSectionSession, matchesSample } from './section-session.js'
+import { createModelPose } from './model-pose.js'
+import { createConnectorControls } from './connector-controls.js'
+import { createConnectorSurfaceSession } from './connector-surface.js'
+import { createModelPicker } from './model-picker.js'
+import { checked, requestClippedModel, requestConnectorSurface } from './model-api.js'
+import { renderModelThumbnail } from './thumbnail-studio.js'
 
 const el = id => document.getElementById(id)
 const params = () => ({
   unit: el('unit').value, yellow: el('yellow').valueAsNumber, blue: el('blue').valueAsNumber,
-  angle: el('angle').valueAsNumber, offset: el('offset').valueAsNumber, union: el('union').checked
+  angle: el('angle').valueAsNumber, offset: el('offset').valueAsNumber, union: el('union').checked,
+  ab_z_range_mm: el('ab-enabled').checked ? ['ab-min', 'ab-max'].map(id => el(id).valueAsNumber) : null
 })
 
-async function checked(url, options) {
-  const response = await fetch(url, options)
-  if (!response.ok) throw Error(await response.text() || response.statusText)
-  return response
-}
+const rangeFields = ['ab-min', 'ab-max'].map(id => ({ number: el(id), slider: el(`${id}-slider`) }))
+const valueFields = ['unit', 'yellow', 'blue', 'offset', 'angle', 'ab-min', 'ab-max', 'opacity', 'pose-step']
+
+const cutSettings = (model, current) => ({ ...current, transform: model.pose.toRows(UNIT_TO_MM[current.unit]) })
 
 function download(blob, name) {
   const link = document.createElement('a')
@@ -26,13 +33,29 @@ function download(blob, name) {
 function start() {
   let source
   let loadId = 0
+  let selectionIntent = 0
+  let importQueue = Promise.resolve()
   let loading = false
-  let exporting = false
+  let loadStatus = ''
   let dirty = false
   let expanded = true
   let pointerCompare = false
   let keyboardCompare = false
+  let abCache
   const compare = el('compare')
+  const inset = el('comparison-inset')
+  const insetLabel = inset.querySelector('figcaption')
+  const poseButtons = [...document.querySelectorAll('[data-pose-axis]')]
+  const poseStep = el('pose-step')
+  const main = document.querySelector('main')
+  const sidebar = main.querySelector('aside')
+  const surfaces = createConnectorSurfaceSession(requestConnectorSurface, invalidate)
+  const connector = createConnectorControls(el('connector-panel'), el('connector-palette'), invalidate, surfaces.retry)
+  const picker = createModelPicker(el('model-picker'), el('model-picker-toggle'), model => {
+    selectionIntent++
+    loadStatus = ''
+    activateModel(model)
+  })
 
   const viewer = createViewer(el('viewport'), el('comparison-viewport'), updatePreview, (field, value) => {
     el(field).value = Number(value.toFixed(field === 'angle' ? 1 : 2))
@@ -50,15 +73,74 @@ function start() {
     el('section-info').textContent = bounds
   }
 
-  function displayPreview(current, profile) {
-    compare.disabled = !expanded || !profile
+  function displayPreview(current, profile, outline, ab, surface, placement) {
+    const editing = expanded || connector.open
+    compare.hidden = !editing
+    compare.disabled = !editing || !profile
     if (compare.disabled) pointerCompare = keyboardCompare = false
     const comparing = pointerCompare || keyboardCompare
     compare.setAttribute('aria-pressed', comparing)
-    el('comparison-inset').hidden = !expanded || !profile || comparing
+    inset.hidden = compare.disabled || comparing
     const opacity = el('opacity').valueAsNumber
     el('opacityValue').textContent = `${opacity}%`
-    viewer.updatePreview(current, profile, { expanded, comparing, opacity: opacity / 100 })
+    const active = !!source && !loading
+    const hasFeature = viewer.updatePreview(current, profile, { expanded: active && expanded, comparing,
+      connectorMode: active && connector.open,
+      surface, placement, opacity: opacity / 100, outline, ab })
+    const label = hasFeature ? '加工后' : '裁剪后'
+    if (insetLabel.textContent !== label) insetLabel.textContent = label
+  }
+
+  function search(outline, range) {
+    const [min, max] = range ?? []
+    if (!abCache || abCache.outline !== outline || abCache.min !== min || abCache.max !== max) {
+      abCache = { outline, min, max, result: selectAb(outline, range) }
+    }
+    return abCache.result
+  }
+
+  function syncBandSliders() {
+    el('ab-controls').hidden = !el('ab-enabled').checked
+    if (!source) return
+    const scale = UNIT_TO_MM[el('unit').value]
+    const { min: lower, max: upper } = source.workGeometry.boundingBox
+    const min = lower.z * scale
+    const max = upper.z * scale
+    for (const { number, slider } of rangeFields) {
+      slider.min = min
+      slider.max = max
+      slider.disabled = !(max > min)
+      if (Number.isFinite(number.valueAsNumber)) slider.value = number.value
+    }
+  }
+
+  function syncPoseControls() {
+    const unavailable = !source || loading
+    const isOriginal = source?.pose.isOriginal ?? true
+    el('pose-toggle').disabled = poseStep.disabled = unavailable
+    el('pose-reset').disabled = unavailable || isOriginal
+    const state = isOriginal ? '原始姿态' : '姿态已调整'
+    if (el('pose-state').textContent !== state) el('pose-state').textContent = state
+    const degrees = poseStep.valueAsNumber
+    for (const button of poseButtons) button.disabled = unavailable || !Number.isFinite(degrees) || degrees <= 0
+  }
+
+  function disposeWorkMesh(model) {
+    model.sections?.dispose()
+    if (model.workGeometry !== model.originalGeometry) model.workGeometry?.dispose()
+  }
+
+  function updateWorkMesh(fitView) {
+    const { originalGeometry, pose } = source
+    const geometry = pose.isOriginal ? originalGeometry : originalGeometry.clone().applyMatrix4(pose.matrix)
+    disposeWorkMesh(source)
+    source.workGeometry = geometry
+    source.sections = createSectionSession(geometry, invalidate)
+    abCache = null
+    viewer.show(geometry, { fitView })
+    syncBandSliders()
+    syncPoseControls()
+    invalidate()
   }
 
   function updatePreview() {
@@ -68,25 +150,45 @@ function start() {
     el('offsetValue').textContent = `${current.offset.toFixed(1)} mm`
     el('angleValue').textContent = `${current.angle.toFixed(1)}°`
     el('download').disabled = !source || loading
-    if (!source || loading || !expanded) {
+    const status = source?.exporting ? source.exportStatus : loadStatus || source?.exportStatus || ''
+    if (el('status').textContent !== status) el('status').textContent = status
+    const editing = expanded || connector.open
+    main.classList.toggle('connector-active', connector.open)
+    main.classList.toggle('preview-collapsed', !editing)
+    el('export-actions').hidden = !editing
+    const active = source && !loading
+    const error = active ? checkProfile(current) : null
+    const surfaceModel = active && connector.open && !error ? source : null
+    const state = surfaces.update(surfaceModel, surfaceModel && cutSettings(source, current))
+    const { placement, invalid } = connector.update(state, active ? error : '请先加载 STL。')
+    if (!active || !editing) {
       el('apply').disabled = true
-      displayPreview(current, null)
+      displayPreview({ ...current, ab_z_range_mm: null }, null)
       return
     }
 
-    const error = checkProfile(current)
-    el('apply').disabled = exporting || !!error
-    const section = error ? null : source.sections.get(current, source.verifiedSample)
-    const profile = section && !section.message ? buildProfile(current, section) : null
-    displayPreview(current, profile)
-    const bounds = profile ? `截面 X  ${profile.left.toFixed(4)} ～ ${profile.right.toFixed(4)} mm` : ''
-    if (error || section?.message) {
-      previewStatus('warning', error || section.message)
+    el('apply').disabled = source.exporting || !!error || !!invalid
+    const section = error ? null : source.sections.get(current, source.verifiedSample && source.pose.isOriginal)
+    const outline = section?.outline
+    const selection = outline ? search(outline, current.ab_z_range_mm) : section
+    const profile = selection && !selection.message ? buildProfile(current, selection) : null
+    const ab = current.ab_z_range_mm ? selection : null
+    displayPreview(current, profile, outline, ab, state.surface, placement)
+    const bounds = ab?.a && ab?.b
+      ? [ab.a, ab.b].map(({ x, z }, i) => `${i ? 'B' : 'A'}  X ${x.toFixed(4)} · Z ${z.toFixed(4)} mm`).join('\n')
+      : profile ? `截面 X  ${profile.left.toFixed(4)} ～ ${profile.right.toFixed(4)} mm` : ''
+    if (error || selection?.message) {
+      const approximate = current.union && !section?.prepared && !error
+      const message = error || selection.message
+      previewStatus('warning', approximate ? `${message} 合并外壳后可能变化。` : message, bounds)
+      if (ab?.message && !approximate) el('apply').disabled = true
     } else if (!section) {
-      previewStatus('pending', '正在计算当前红线截面…')
+      previewStatus('pending', current.ab_z_range_mm ? '正在准备当前红线截面的外轮廓…' : '正在计算当前红线截面…')
     } else if (!profile) {
-      previewStatus('warning', '梯形上底须为正宽度，请调整高度或角度。')
-      el('apply').disabled = true
+      const approximate = current.ab_z_range_mm && current.union && !section.prepared
+      const message = '梯形上底须为正宽度，请调整高度或角度。'
+      previewStatus('warning', approximate ? `${message} 合并外壳后可能变化。` : message, bounds)
+      el('apply').disabled ||= !approximate
     } else if (current.union && !section.prepared) {
       previewStatus('warning', '近似预览 · 导出时会合并外壳，截面可能变化。', bounds)
     } else {
@@ -94,78 +196,157 @@ function start() {
     }
   }
 
-  async function load(file) {
-    const id = ++loadId
-    loading = true
+  function setLoading(value) {
+    loading = value
+    sidebar.inert = el('connector-palette').inert = value
+    el('pose-controls').hidePopover?.()
+    syncPoseControls()
     invalidate()
-    previewStatus('pending', '正在读取 STL…')
+  }
+
+  function saveDraft() {
+    source.values = Object.fromEntries(valueFields.map(id => [id, el(id).value]))
+    source.union = el('union').checked
+    source.abEnabled = el('ab-enabled').checked
+    connector.saveDraft()
+  }
+
+  async function activateModel(model, preparedGeometry) {
+    const id = ++loadId
+    picker.highlight(model)
+    if (source === model) {
+      setLoading(false)
+      return
+    }
+    if (source && !loading) saveDraft()
+    surfaces.update(null)
+    setLoading(true)
+    previewStatus('pending', `正在读取 ${model.name}…`)
+    let geometry = preparedGeometry
     try {
-      const blob = file || await (await checked('/sample.stl')).blob()
-      const bytes = await blob.arrayBuffer()
-      if (id !== loadId) return
-      const verifiedSample = !file && await matchesSample(bytes).catch(() => false)
-      if (id !== loadId) return
-      const geometry = viewer.parse(bytes)
-      source?.sections.dispose()
-      source = {
-        blob, verifiedSample,
-        name: file?.name || 'xiong.stl',
-        sections: createSectionSession(geometry, invalidate)
+      if (!geometry) {
+        const bytes = await model.blob.arrayBuffer()
+        if (id !== loadId) return
+        geometry = viewer.parse(bytes)
       }
-      const box = geometry.boundingBox
-      const height = box.max.y - box.min.y
-      el('name').textContent = source.name
-      el('count').textContent = `${(geometry.attributes.position.count / 3).toLocaleString()} 个三角面`
-      el('unit').value = file ? 'mm' : 'cm'
-      el('union').checked = !file
-      el('yellow').value = file ? Number((box.min.y + height * 0.55).toFixed(3)) : 69
-      el('blue').value = file ? Number((box.min.y + height * 0.85).toFixed(3)) : 87
-      el('offset').value = 7.5
-      el('angle').value = 53
+      if (id !== loadId) return
+      const previous = source
+      source = model
+      source.originalGeometry = geometry
+      geometry = null
+      el('name').textContent = model.name
+      el('count').textContent = `${model.faceCount.toLocaleString()} 个三角面`
+      main.dataset.activeModelId = model.id
+      for (const [field, value] of Object.entries(model.values)) el(field).value = value
+      el('union').checked = model.union
+      el('ab-enabled').checked = model.abEnabled
+      connector.restoreDraft(model.connector)
+      pointerCompare = keyboardCompare = false
       setMode('view')
-      viewer.show(geometry)
-      if (!exporting) el('status').textContent = ''
+      updateWorkMesh(true)
+      if (previous) {
+        disposeWorkMesh(previous)
+        previous.originalGeometry.dispose()
+        previous.sections = previous.workGeometry = previous.originalGeometry = undefined
+      }
     } catch (error) {
-      if (id === loadId) el('status').textContent = `无法打开模型。 ${error.message}`
+      if (id !== loadId) return
+      loadStatus = `无法打开 ${model.name}。 ${error.message}`
+      if (source) picker.highlight(source)
     } finally {
+      geometry?.dispose()
       if (id === loadId) {
-        loading = false
+        setLoading(false)
         if (!source) previewStatus('warning', '请打开一个有效的 STL 文件。')
-        invalidate()
       }
     }
   }
 
+  function importModels(files) {
+    if (!files.length) return
+    const intent = ++selectionIntent
+    loadStatus = ''
+    importQueue = importQueue.then(async () => {
+      for (const file of files) {
+        const name = file?.name || 'xiong.stl'
+        let geometry
+        try {
+          const blob = file || await (await checked('/sample.stl')).blob()
+          const bytes = await blob.arrayBuffer()
+          const verifiedSample = await matchesSample(bytes).catch(() => false)
+          geometry = viewer.parse(bytes)
+          const box = geometry.boundingBox
+          const dy = box.max.y - box.min.y
+          const demo = !file || verifiedSample
+          let thumbnail
+          try {
+            thumbnail = renderModelThumbnail(geometry)
+          } catch (error) {
+            console.warn('无法生成模型缩略图', error)
+          }
+          const model = picker.add({ blob, name, thumbnail, sample: !file, verifiedSample, faceCount: geometry.attributes.position.count / 3,
+            pose: createModelPose(box), connector: connector.createDraft(), union: demo, abEnabled: false,
+            values: {
+              unit: demo ? 'cm' : 'mm',
+              yellow: demo ? 69 : (box.min.y + dy * 0.55).toFixed(3),
+              blue: demo ? 87 : (box.min.y + dy * 0.85).toFixed(3),
+              offset: 7.5, angle: 53, 'ab-min': demo ? -12 : box.min.z, 'ab-max': demo ? 12 : box.max.z,
+              opacity: 20, 'pose-step': 90
+            } })
+          if (!source || intent === selectionIntent) {
+            const prepared = geometry
+            geometry = null
+            await activateModel(model, prepared)
+          }
+        } catch (error) {
+          if (!source || intent === selectionIntent) {
+            loadStatus = `无法打开 ${name}。 ${error.message}`
+            if (!source) previewStatus('warning', '请打开一个有效的 STL 文件。')
+            invalidate()
+          }
+        } finally {
+          geometry?.dispose()
+        }
+      }
+    })
+  }
+
   async function exportResult() {
-    if (!source || loading || exporting) return
+    if (!source || loading || source.exporting) return
     const model = source
     const settings = params()
     const error = checkProfile(settings)
     if (error) {
-      el('status').textContent = error
+      model.exportStatus = error
+      invalidate()
       return
     }
     // Hold the clicked file and parameters while the upload and export run.
-    exporting = true
+    const payload = cutSettings(model, settings)
+    if (connector.open) {
+      const { spec, error } = connector.read()
+      if (error) {
+        model.exportStatus = error
+        invalidate()
+        return
+      }
+      payload.connector = spec
+    }
+    model.exporting = true
+    loadStatus = ''
     el('apply').disabled = true
-    el('status').textContent = `正在生成并校验 ${model.name} 的裁剪件…`
+    model.exportStatus = `正在生成并校验 ${model.name} 的裁剪件…`
+    invalidate()
     try {
-      const upload = await checked('/api/upload', {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: model.blob
-      })
-      const { model: modelId } = await upload.json()
-      const response = await checked('/api/clip', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelId, ...settings })
-      })
+      const clipped = await requestClippedModel(model, payload)
       const name = model.name.replace(/\.stl$/i, '') + '-clipped.stl'
-      download(await response.blob(), name)
-      el('status').textContent = `已导出 ${name}`
+      download(clipped, name)
+      model.exportStatus = `已导出 ${name}`
     } catch (error) {
-      el('status').textContent = `导出失败。 ${error.message}`
+      model.exportStatus = `导出失败。 ${error.message}`
     } finally {
-      exporting = false
-      invalidate()
+      model.exporting = false
+      if (source === model) invalidate()
     }
   }
 
@@ -176,15 +357,38 @@ function start() {
   }
 
   for (const button of modeButtons) button.onclick = () => setMode(button.dataset.edit)
-  for (const id of ['angle', 'offset', 'yellow', 'blue', 'unit', 'union', 'opacity']) el(id).oninput = invalidate
-  for (const id of ['fit', 'side', 'front']) el(id).onclick = viewer[id]
+  poseStep.oninput = syncPoseControls
+  for (const button of poseButtons) button.onclick = () => {
+    if (!source || loading || button.disabled) return
+    source.pose.rotate(button.dataset.poseAxis, Number(button.dataset.direction) * poseStep.valueAsNumber)
+    updateWorkMesh(false)
+  }
+  el('pose-reset').onclick = () => {
+    if (!source || loading) return
+    source.pose.reset()
+    updateWorkMesh(false)
+  }
+  for (const id of ['angle', 'offset', 'yellow', 'blue', 'union', 'opacity']) el(id).oninput = invalidate
+  function updateBandInputs() {
+    syncBandSliders()
+    invalidate()
+  }
+  for (const id of ['unit', 'ab-enabled']) el(id).oninput = updateBandInputs
+  for (const { number, slider } of rangeFields) {
+    number.oninput = updateBandInputs
+    slider.oninput = () => {
+      number.value = Number(slider.valueAsNumber.toFixed(3))
+      invalidate()
+    }
+  }
+  for (const id of ['fit', 'side', 'front', 'top']) el(id).onclick = viewer[id]
   const toggle = el('toggle-preview')
   toggle.onclick = () => {
     expanded = !expanded
     toggle.setAttribute('aria-expanded', expanded)
     el('preview-body').inert = !expanded
-    el('edit-tools').hidden = compare.hidden = !expanded
-    document.querySelector('main').classList.toggle('preview-collapsed', !expanded)
+    el('edit-tools').hidden = !expanded
+    main.classList.toggle('crop-collapsed', !expanded)
     invalidate()
   }
   const comparePointer = active => {
@@ -217,7 +421,7 @@ function start() {
   el('download').onclick = () => { if (source) download(source.blob, source.name) }
   el('upload').onclick = () => el('file').click()
   el('file').onchange = event => {
-    if (event.target.files[0]) load(event.target.files[0])
+    importModels([...event.target.files])
     event.target.value = ''
   }
   const stage = el('stage')
@@ -231,9 +435,9 @@ function start() {
   stage.ondrop = event => {
     event.preventDefault()
     stage.classList.remove('drag')
-    if (event.dataTransfer.files[0]) load(event.dataTransfer.files[0])
+    importModels([...event.dataTransfer.files])
   }
-  load()
+  importModels([null])
 }
 
 try {

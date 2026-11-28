@@ -5,6 +5,8 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { UNIT_TO_MM } from './profile.js'
 import { createPreviewMaterial, createPreviewPlanes } from './preview.js'
 import { createCutCaps } from './caps.js'
+import { createSearchBand } from './search-band.js'
+import { createConnectorPreview, createConnectorResult } from './connector-preview.js'
 
 export function createViewer(host, inset, beforeRender, edit) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -38,7 +40,8 @@ export function createViewer(host, inset, beforeRender, edit) {
   ghost.visible = false
   const insetScene = new THREE.Scene()
   insetScene.background = new THREE.Color(0xf1f5ef)
-  const insetModel = new THREE.Mesh(model.geometry, preview.material)
+  const insetPreview = createPreviewMaterial()
+  const insetModel = new THREE.Mesh(model.geometry, insetPreview.material)
   insetScene.add(lighting.clone(), insetModel)
   const caps = createCutCaps(renderer, preview.material.color)
   caps.surface.visible = caps.inset.visible = false
@@ -46,6 +49,8 @@ export function createViewer(host, inset, beforeRender, edit) {
   insetScene.add(caps.inset)
   const insetCamera = camera.clone()
   const insetDirection = new THREE.Vector3()
+  const insetBounds = new THREE.Box3()
+  const insetFocus = new THREE.Sphere()
   const references = new THREE.Group()
   const grid = new THREE.GridHelper(1, 20, 0x859b92, 0xa8b8ac)
   grid.material.transparent = true
@@ -55,8 +60,12 @@ export function createViewer(host, inset, beforeRender, edit) {
   references.add(grid, axes)
   references.visible = false
   const planes = createPreviewPlanes()
+  const searchBand = createSearchBand()
+  const connector = createConnectorPreview()
+  const connectorResult = createConnectorResult(preview.material.color)
   const anchor = new THREE.Object3D()
-  scene.add(references, model, ghost, planes.group, anchor)
+  scene.add(references, model, ghost, planes.group, searchBand.group, connector.group, connectorResult.main, anchor)
+  insetScene.add(connectorResult.inset)
 
   // Follow the Editor viewport's convention of suspending camera controls
   // while a TransformControls handle owns the pointer.
@@ -98,9 +107,9 @@ export function createViewer(host, inset, beforeRender, edit) {
     if (!gizmo.object) gizmo.attach(anchor)
   }
 
-  function fitDistance(view, padding) {
+  function fitDistance(view, padding, extent = radius) {
     const halfFov = THREE.MathUtils.degToRad(view.fov / 2)
-    return radius * padding / Math.sin(Math.atan(Math.tan(halfFov) * Math.min(1, view.aspect)))
+    return extent * padding / Math.sin(Math.atan(Math.tan(halfFov) * Math.min(1, view.aspect)))
   }
 
   function render() {
@@ -118,10 +127,11 @@ export function createViewer(host, inset, beforeRender, edit) {
     if (left < 0 || bottom < 0 || left + width > host.clientWidth || bottom + height > host.clientHeight) return
     insetCamera.aspect = width / height
     insetCamera.near = camera.near
-    insetCamera.far = camera.far
+    const distance = fitDistance(insetCamera, 1.06, insetFocus.radius)
+    insetCamera.far = Math.max(camera.far, distance + insetFocus.radius * 2)
     insetDirection.copy(camera.position).sub(orbit.target).normalize()
-    insetCamera.position.copy(center).addScaledVector(insetDirection, fitDistance(insetCamera, 1.06))
-    insetCamera.lookAt(center)
+    insetCamera.position.copy(insetFocus.center).addScaledVector(insetDirection, distance)
+    insetCamera.lookAt(insetFocus.center)
     insetCamera.updateProjectionMatrix()
     renderer.setViewport(left, bottom, width, height)
     renderer.setScissor(left, bottom, width, height)
@@ -163,8 +173,7 @@ export function createViewer(host, inset, beforeRender, edit) {
       }
       return geometry
     },
-    show(geometry) {
-      model.geometry.dispose()
+    show(geometry, { fitView = true } = {}) {
       model.geometry = ghost.geometry = insetModel.geometry = geometry
       caps.setGeometry(geometry)
       model.visible = true
@@ -175,22 +184,36 @@ export function createViewer(host, inset, beforeRender, edit) {
       grid.scale.setScalar(radius * 3.5)
       const axisLength = max => THREE.MathUtils.clamp(max + radius * 0.16, radius * 0.65, radius * 1.5)
       axes.scale.set(axisLength(bounds.max.x), axisLength(bounds.max.y), axisLength(bounds.max.z))
-      fit(new THREE.Vector3(0.32, 0.12, 1))
+      if (fitView) fit(new THREE.Vector3(0.32, 0.12, 1))
     },
-    updatePreview(params, profile, { expanded, comparing, opacity }) {
+    updatePreview(params, profile, { expanded, comparing, connectorMode, surface, placement, opacity, outline, ab }) {
       activeParams = params
-      activeProfile = expanded ? profile : null
+      activeProfile = expanded || connectorMode ? profile : null
       showTools = expanded && !comparing
       if (!showTools && gizmo.dragging) gizmo.pointerUp(null)
       const scale = UNIT_TO_MM[params.unit]
-      caps.update(activeProfile, scale, bounds)
-      preview.set(activeProfile, scale)
+      connector.update(surface, placement, scale)
+      connector.group.visible &&= !comparing
+      const hasFeature = connectorResult.update(activeProfile ? surface : null, placement, scale, comparing)
+      const mainFeature = comparing && hasFeature
+      caps.update(activeProfile, scale, bounds, { mainTop: !mainFeature, insetTop: !hasFeature })
+      preview.set(activeProfile, scale, mainFeature)
+      insetPreview.set(activeProfile, scale, hasFeature)
+      if (bounds) insetFocus.set(center, radius)
+      if (hasFeature && placement.isPost && placement.end / scale > bounds.max.y) {
+        insetBounds.copy(bounds)
+        insetBounds.max.y = placement.end / scale
+        insetBounds.getBoundingSphere(insetFocus)
+      }
       removed.set(activeProfile, scale)
       removed.material.opacity = opacity
-      ghost.visible = !!activeProfile && showTools && opacity > 0
+      ghost.visible = !!activeProfile && showTools && !connectorMode && opacity > 0
       references.visible = !!bounds && expanded
       planes.set(bounds, params, activeProfile, showTools)
+      searchBand.update(bounds, radius, scale, params.yellow + params.offset,
+        params.ab_z_range_mm, outline, ab, showTools)
       syncGizmo()
+      return hasFeature
     },
     setMode(next) {
       if (gizmo.dragging) gizmo.pointerUp(null)
@@ -204,6 +227,7 @@ export function createViewer(host, inset, beforeRender, edit) {
     },
     fit: () => fit(),
     front: () => fit(new THREE.Vector3(0, 0, 1)),
-    side: () => fit(new THREE.Vector3(1, 0, 0))
+    side: () => fit(new THREE.Vector3(1, 0, 0)),
+    top: () => fit(new THREE.Vector3(0, 1, 1e-6))
   }
 }

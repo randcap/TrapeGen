@@ -5,10 +5,11 @@ from math import isfinite, radians, tan
 
 import numpy as np
 import trimesh
-from shapely import LineString, Polygon, polygonize_full
+from shapely import LinearRing, Polygon, box, get_parts
 from shapely.geometry.polygon import orient
 
 from .config import ANGLE_RANGE, OFFSET_RANGE, GeometryError, Tolerances
+from .sections import section_regions
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class Trapezoid:
     angle_deg: float
     inset_mm: float
     area_mm2: float
+    a_section_xyz_mm: tuple[float, float, float]
+    b_section_xyz_mm: tuple[float, float, float]
 
     @property
     def ring(self):
@@ -56,35 +59,9 @@ def check_parameters(blue_y, yellow_y, offset_mm, angle_deg, margin_mm, tol):
 def slice_mesh(mesh, y_red: float, contour_index: int | None, tol: Tolerances):
     if not mesh.bounds[0, 1] < y_red < mesh.bounds[1, 1]:
         raise GeometryError(f"Red plane Y={y_red:g} mm is outside the interior of the STL bounds.")
-    segments = trimesh.intersections.mesh_plane(mesh, [0, 1, 0], [0, y_red, 0])
+    regions, segments = section_regions(mesh, 1, y_red, tol)
     if not len(segments):
         raise GeometryError(f"No section at Y={y_red:g} mm.")
-    # Snap numerically equivalent segment endpoints while retaining an original
-    # intersection coordinate for each group.
-    xz = segments[:, :, [0, 2]].reshape(-1, 2)
-    _, first, inverse = np.unique(
-        np.rint(xz / tol.section_snap_mm), axis=0, return_index=True, return_inverse=True
-    )
-    pairs = np.unique(np.sort(inverse.reshape(-1, 2), axis=1), axis=0)
-    pairs = pairs[pairs[:, 0] != pairs[:, 1]]
-    lines = [LineString(coords) for coords in xz[first][pairs]]
-    polygons, cuts, dangles, invalid = polygonize_full(lines)
-    if any(not geom.is_empty for geom in (cuts, dangles, invalid)):
-        raise GeometryError(
-            f"Section Y={y_red:g} mm has open or ambiguous edges "
-            f"(cuts={len(cuts.geoms)}, dangles={len(dangles.geoms)}, invalid={len(invalid.geoms)})."
-        )
-
-    # Polygonize returns both faces on either side of a hole boundary.
-    # Keep contours at even nesting depth, with their immediate holes.
-    candidates = list(polygons.geoms)
-    shells = [Polygon(poly.exterior) for poly in candidates]
-    regions = [
-        poly for i, poly in enumerate(candidates)
-        if sum(shell.contains(shells[i]) for j, shell in enumerate(shells)
-               if j != i and shell.area > shells[i].area) % 2 == 0
-    ]
-    regions.sort(key=lambda poly: (-poly.area, *poly.bounds))
     if not regions:
         raise GeometryError(f"No solid section at Y={y_red:g} mm.")
     areas = tuple(float(poly.area) for poly in regions)
@@ -101,9 +78,32 @@ def slice_mesh(mesh, y_red: float, contour_index: int | None, tol: Tolerances):
     return Section(y_red, points, segments, index, areas)
 
 
-def build_trapezoid(section, y_blue, angle_deg, tol):
+def _ab_extrema(section, ab_z_range_mm):
+    points = section.points[:, [0, 2]]
+    if ab_z_range_mm is not None:
+        z_min, z_max = ab_z_range_mm
+        contour = LinearRing(points)
+        x_min, _, x_max, _ = contour.bounds
+        clipped = contour.intersection(box(x_min, z_min, x_max, z_max))
+        lines = [
+            np.asarray(line.coords) for line in get_parts(clipped)
+            if line.geom_type in ("LineString", "LinearRing") and line.length > 0
+        ]
+        if not lines:
+            raise GeometryError(
+                f"A/B Z range [{z_min:g}, {z_max:g}] mm contains no contour segments "
+                f"at Y={section.y_mm:g} mm."
+            )
+        points = np.concatenate(lines)
+    left = points[np.argmin(points[:, 0])]
+    right = points[np.argmax(points[:, 0])]
+    return tuple((float(x), section.y_mm, float(z)) for x, z in (left, right))
+
+
+def build_trapezoid(section, y_blue, angle_deg, tol, *, ab_z_range_mm=None):
     y_red = section.y_mm
-    x_a, x_b = float(section.points[:, 0].min()), float(section.points[:, 0].max())
+    a, b = _ab_extrema(section, ab_z_range_mm)
+    x_a, x_b = a[0], b[0]
     y_blue = float(y_blue)
     height = y_blue - y_red
     inset = height / tan(radians(angle_deg))
@@ -115,7 +115,7 @@ def build_trapezoid(section, y_blue, angle_deg, tol):
         raise GeometryError(f"Trapezoid upper base is not positive ({upper:g} mm).")
     geometry = Trapezoid(
         (x_a, y_red), (x_b, y_red), (x_a + inset, y_blue), (x_b - inset, y_blue),
-        lower, upper, height, angle_deg, inset, (lower + upper) * height / 2,
+        lower, upper, height, angle_deg, inset, (lower + upper) * height / 2, a, b,
     )
     return geometry, checked_polygon(geometry.ring)
 

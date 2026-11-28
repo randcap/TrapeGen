@@ -7,6 +7,7 @@ export function createPreviewMaterial({ ghost = false } = {}) {
     cropSlope: { value: 0 },
     cropUnit: { value: 1 },
     cropEnabled: { value: false },
+    cropReplaceTop: { value: false },
     cropGhost: { value: ghost }
   }
   const material = new THREE.MeshStandardMaterial({
@@ -28,6 +29,7 @@ export function createPreviewMaterial({ ghost = false } = {}) {
         uniform float cropSlope;
         uniform float cropUnit;
         uniform bool cropEnabled;
+        uniform bool cropReplaceTop;
         uniform bool cropGhost;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec2 cropMm = cropPosition * cropUnit;
@@ -36,12 +38,17 @@ export function createPreviewMaterial({ ghost = false } = {}) {
         bool removed = dy > 0.0 &&
             (cropMm.y > cropLimits.y || cropMm.x < cropLimits.z + inset ||
              cropMm.x > cropLimits.w - inset);
-        if (cropEnabled && removed != cropGhost) discard;`)
+        if (cropEnabled && removed != cropGhost) discard;
+        if (cropReplaceTop) {
+          float slack = max(1e-6, abs(cropLimits.y) * 2e-7);
+          if (abs(cropMm.y - cropLimits.y) <= slack && fwidth(cropMm.y) <= slack) discard;
+        }`)
   }
   return {
     material,
-    set(profile, scale) {
+    set(profile, scale, replaceTop = false) {
       region.cropEnabled.value = !!profile
+      region.cropReplaceTop.value = !!profile && replaceTop
       region.cropUnit.value = scale || 1
       if (profile) {
         region.cropLimits.value.set(profile.red, profile.blue, profile.left, profile.right)

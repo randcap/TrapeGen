@@ -112,9 +112,11 @@ export function createCutCaps(renderer, color) {
       back.geometry = front.geometry = geometry
       for (const face of [top, left, right, shoulders]) face.key = null
     },
-    update(profile, scale, bounds) {
+    update(profile, scale, bounds, { mainTop = true, insetTop = true } = {}) {
       surface.visible = inset.visible = !!profile
       if (!profile) return
+      top.mesh.visible = mainTop
+      top.thumbnail.visible = insetTop
       const margin = 1 / scale
       const near = bounds.min.z - margin
       const far = bounds.max.z + margin
@@ -129,7 +131,7 @@ export function createCutCaps(renderer, color) {
       const toU = x => (x - xmin) / (xmax - xmin)
       top.range.value.set(toU(c), toU(d))
       shoulders.range.value.set(toU(x0), toU(x1))
-      prepareFace(top, horizontal(xmin, xmax, y1, near, far))
+      if (mainTop || insetTop) prepareFace(top, horizontal(xmin, xmax, y1, near, far))
       prepareFace(shoulders, horizontal(xmin, xmax, y0, near, far))
       prepareFace(left, [
         new THREE.Vector3(x0, y0, far), new THREE.Vector3(c - x0, y1 - y0, 0),

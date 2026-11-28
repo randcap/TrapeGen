@@ -3,6 +3,10 @@ export const UNIT_TO_MM = { mm: 1, cm: 10, m: 1000, in: 25.4 }
 export const COORDINATE_MM = 1e-6
 export const SECTION_SNAP_MM = 1e-7
 
+export function validAbRange(range) {
+  return range?.length === 2 && range.every(Number.isFinite) && range[0] < range[1]
+}
+
 export function checkProfile(params) {
   const { yellow, blue, offset, angle } = params
   if (![yellow, blue, offset, angle].every(Number.isFinite) || !UNIT_TO_MM[params.unit]) {
@@ -10,6 +14,9 @@ export function checkProfile(params) {
   }
   if (offset < 5 || offset > 10 || angle < 52 || angle > 55) {
     return '偏移范围为 5–10 mm，斜面角度范围为 52–55°。'
+  }
+  if (params.ab_z_range_mm && !validAbRange(params.ab_z_range_mm)) {
+    return '请输入有效的 A/B 搜索范围，Z 下限须小于上限。'
   }
   const red = yellow + offset
   if (!Number.isFinite(red) || blue - red <= COORDINATE_MM) return '蓝线必须高于红色截面。'

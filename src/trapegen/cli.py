@@ -21,8 +21,13 @@ def main(argv=None):
     parser.add_argument("--margin", type=float, default=1.0)
     parser.add_argument("--unit", choices=UNIT_TO_MM, default="mm")
     parser.add_argument("--transform", type=Path, help="JSON 4x4 world-mm to local-mm rigid transform.")
+    parser.add_argument("--connector", type=Path, help="JSON definition of one connector on the blue cut surface.")
     parser.add_argument("--reference-index", type=int, help="Zero-based IGES edge index.")
     parser.add_argument("--contour-index", type=int, help="Zero-based section contour, largest first.")
+    parser.add_argument("--ab-z-range", type=float, nargs=2, metavar=("MIN", "MAX"),
+                        help="Restrict A/B search on the selected contour to this local Z band (mm).")
+    parser.add_argument("--measure-z", type=float, action="append", metavar="Z",
+                        help="Validate and report an XY section of the exported STL at local Z (mm). Repeatable.")
     parser.add_argument("--iges-backend", choices=("occt", "line"), default="occt")
     parser.add_argument("--union-overlapping-shells", action="store_true",
                         help="Explicitly union overlapping positive-volume shells before processing.")
@@ -34,11 +39,13 @@ def main(argv=None):
 
     try:
         transform = json.loads(args.transform.read_text()) if args.transform else None
+        connector = json.loads(args.connector.read_text()) if args.connector else None
         generator = TrapezoidGenerator(
             args.stl, args.igs, yellow_reference_y=args.yellow_y, blue_y=args.blue_y,
             transform=transform, stl_unit=args.unit, reference_index=args.reference_index,
             contour_index=args.contour_index, iges_backend=args.iges_backend,
             union_overlapping_shells=args.union_overlapping_shells,
+            ab_z_range_mm=args.ab_z_range, measure_z_mm=args.measure_z, connector=connector,
         )
         result = generator.generate(
             args.output, offset_mm=args.offset, angle_deg=args.angle, margin_mm=args.margin,

@@ -11,6 +11,8 @@ from threading import Lock
 from time import perf_counter
 
 from trapegen import TrapezoidGenerator
+from trapegen.config import Frame, Tolerances
+from trapegen.sections import normalize_ab_range
 
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLE = ROOT / "data/stl/xiong.stl"
@@ -36,21 +38,50 @@ class Workspace:
             old.unlink()
         return key
 
-    def clip(self, params):
+    def clip(self, params, *, measurements_only=False, surface_only=False):
+        depths = params.get("measure_z_mm")
+        if measurements_only and not depths:
+            raise ValueError("measure_z_mm must contain at least one local Z position.")
         model = params["model"]
         path = SAMPLE if model == "xiong" else self.uploads.get(model)
         if path is None:
             raise ValueError("模型已过期，请重新上传")
-        key = (model, params["unit"], float(params["yellow"]), float(params["blue"]), bool(params["union"]))
+        ab_range = normalize_ab_range(params.get("ab_z_range_mm"))
+        contour_index = params.get("contour_index")
+        if contour_index is not None and (type(contour_index) is not int or contour_index < 0):
+            raise ValueError("contour_index must be a nonnegative integer.")
+        unit = params["unit"]
+        try:
+            frame = Frame(unit, params.get("transform"), Tolerances())
+        except OverflowError as exc:
+            raise ValueError("Transform must be a finite 4×4 matrix.") from exc
+        transform = tuple(tuple(row) for row in frame.world_mm_to_local.tolist())
+        key = (model, unit, float(params["yellow"]), float(params["blue"]), bool(params["union"]),
+               contour_index, ab_range, transform)
         if self.key != key:
             self.generator = TrapezoidGenerator(path, stl_unit=key[1], yellow_reference_y=key[2],
-                                                blue_y=key[3], union_overlapping_shells=key[4])
+                                                blue_y=key[3], union_overlapping_shells=key[4],
+                                                contour_index=contour_index, ab_z_range_mm=ab_range,
+                                                transform=transform)
             self.key = key
         result = self.generator.generate(offset_mm=float(params["offset"]), angle_deg=float(params["angle"]),
-                                         compute_assembly=False)
+                                         compute_assembly=False,
+                                         connector=None if surface_only else params.get("connector"))
+        if surface_only:
+            return self.generator.describe_connector_surface(result)
         path = self.directory / "clip.stl"
         self.generator.frame.mesh_to_stl(result.result_mesh).export(path)
-        self.generator.validate_export(path, result)
+        report = self.generator.validate_export(path, result, measure_z_mm=depths)
+        if measurements_only:
+            response = {
+                "ab_z_range_mm": ab_range,
+                "a_section_xyz_mm": result.geometry_parameters.a_section_xyz_mm,
+                "b_section_xyz_mm": result.geometry_parameters.b_section_xyz_mm,
+                "section_measurements": report["section_measurements"],
+            }
+            if result.connector is not None:
+                response["connector"] = report["connector"]
+            return response
         return path.read_bytes()
 
 
@@ -72,13 +103,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            if self.path not in ("/api/upload", "/api/clip"):
+            if self.path not in ("/api/upload", "/api/clip", "/api/measure-sections", "/api/connector-surface"):
                 return self.send_error(404)
             expected = "application/octet-stream" if self.path.endswith("upload") else "application/json"
             if self.headers.get_content_type() != expected:
                 return self.send_error(415)
             size = int(self.headers.get("Content-Length", 0))
-            limit = 128 * 1024**2 if self.path.endswith("upload") else 4096
+            limit = 128 * 1024**2 if self.path.endswith("upload") else 16384
             if not 0 < size <= limit:
                 return self.send_error(413)
             body = self.rfile.read(size)
@@ -89,9 +120,18 @@ class Handler(SimpleHTTPRequestHandler):
                     media = "application/json"
                 else:
                     started = perf_counter()
-                    body = self.server.workspace.clip(json.loads(body))
+                    measurements_only = self.path == "/api/measure-sections"
+                    surface_only = self.path == "/api/connector-surface"
+                    result = self.server.workspace.clip(
+                        json.loads(body), measurements_only=measurements_only, surface_only=surface_only
+                    )
                     timing = (perf_counter() - started) * 1000
-                    media = "application/octet-stream"
+                    if measurements_only or surface_only:
+                        body = json.dumps(result, allow_nan=False).encode()
+                        media = "application/json"
+                    else:
+                        body = result
+                        media = "application/octet-stream"
             self.reply(body, media, timing=timing)
         except (ValueError, KeyError, TypeError, RuntimeError, OSError) as exc:
             self.reply(str(exc).encode(), "text/plain; charset=utf-8", 422)

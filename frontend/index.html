@@ -9,10 +9,40 @@
 <body>
   <header>
     <strong><i aria-hidden="true">◩</i> TrapeGen</strong>
-    <span>模型工作台</span>
-    <button id="upload">打开 STL</button>
-    <input id="file" type="file" accept=".stl" hidden>
+    <span class="workbench-label">模型工作台</span>
+    <button id="model-picker-toggle" type="button" popovertarget="model-picker" aria-label="切换暂存模型" aria-expanded="false" title="切换暂存模型" disabled><span aria-hidden="true"></span></button>
+    <div class="header-actions">
+      <button id="pose-toggle" popovertarget="pose-controls" disabled>模型摆正</button>
+      <button id="upload">打开 STL</button>
+    </div>
+    <input id="file" type="file" accept=".stl" multiple hidden>
   </header>
+  <div id="model-picker" class="model-picker" popover></div>
+  <section id="pose-controls" class="pose-panel" popover aria-labelledby="pose-title">
+    <h2 id="pose-title">模型摆正</h2>
+    <label for="pose-step">每次旋转 <span><input id="pose-step" type="number" min="0" step="any" value="90"> °</span></label>
+    <div class="pose-axes">
+      <div role="group" aria-label="绕 X 轴旋转">
+        <span>X</span>
+        <button data-pose-axis="x" data-direction="-1" aria-label="绕 X 轴负向旋转">−</button>
+        <button data-pose-axis="x" data-direction="1" aria-label="绕 X 轴正向旋转">+</button>
+      </div>
+      <div role="group" aria-label="绕 Y 轴旋转">
+        <span>Y</span>
+        <button data-pose-axis="y" data-direction="-1" aria-label="绕 Y 轴负向旋转">−</button>
+        <button data-pose-axis="y" data-direction="1" aria-label="绕 Y 轴正向旋转">+</button>
+      </div>
+      <div role="group" aria-label="绕 Z 轴旋转">
+        <span>Z</span>
+        <button data-pose-axis="z" data-direction="-1" aria-label="绕 Z 轴负向旋转">−</button>
+        <button data-pose-axis="z" data-direction="1" aria-label="绕 Z 轴正向旋转">+</button>
+      </div>
+    </div>
+    <div class="pose-footer">
+      <small id="pose-state" role="status">原始姿态</small>
+      <button id="pose-reset" disabled>重置姿态</button>
+    </div>
+  </section>
   <main>
     <section id="stage" aria-label="三维模型">
       <div class="caption">
@@ -31,15 +61,17 @@
         <div id="comparison-viewport"></div>
       </figure>
       <button id="compare" disabled aria-pressed="false"
-        title="悬停查看裁剪后的模型">对比</button>
+        title="悬停查看加工结果">对比</button>
       <div class="tools">
         <button id="front">正视</button>
         <button id="side">侧视</button>
+        <button id="top">俯视</button>
         <button id="fit">适应窗口</button>
       </div>
       <small class="hint">左键旋转 · 右键平移 · 滚轮缩放</small>
+      <div id="connector-palette" class="connector-palette" hidden></div>
     </section>
-    <aside class="preview-panel" aria-label="裁剪预览">
+    <aside class="preview-panel" aria-label="加工参数">
       <h2><button id="toggle-preview" aria-expanded="true" aria-controls="preview-body">
         裁剪预览 <span class="toggle-chevron" aria-hidden="true"></span>
       </button></h2>
@@ -49,28 +81,61 @@
             <output id="preview-status" data-state="pending" role="status">正在读取 STL…</output>
             <output id="section-info"></output>
           </div>
-          <h3>参考位置</h3>
-          <label>STL 单位
-            <select id="unit"><option>mm</option><option selected>cm</option><option>m</option><option>in</option></select>
-          </label>
-          <label><span><i class="swatch yellow"></i>黄线 Y</span><span><input id="yellow" type="number" step="any" value="69"> mm</span></label>
-          <label><span><i class="swatch blue"></i>蓝线 Y</span><span><input id="blue" type="number" step="any" value="87"> mm</span></label>
-          <h3>梯形参数</h3>
-          <label for="offset"><span><i class="swatch red"></i>向上偏移</span><output id="offsetValue"></output></label>
-          <input id="offset" type="range" min="5" max="10" step=".1" value="7.5">
-          <label for="angle"><span><i class="swatch violet"></i>斜边角度</span><output id="angleValue"></output></label>
-          <input id="angle" type="range" min="52" max="55" step=".1" value="53">
-          <label class="check"><input id="union" type="checkbox" checked> 合并重叠外壳</label>
-          <label for="opacity">
-            <span><i class="swatch removed"></i>待裁剪区不透明度</span><output id="opacityValue">20%</output>
-          </label>
-          <input id="opacity" type="range" min="0" max="100" step="1" value="20">
-          <div class="actions">
-            <button class="primary" id="apply" disabled>导出裁剪 STL</button>
-            <button id="download" disabled>下载原始 STL</button>
+          <div class="preview-settings">
+            <h3>参考位置</h3>
+            <label>STL 单位
+              <select id="unit"><option>mm</option><option selected>cm</option><option>m</option><option>in</option></select>
+            </label>
+            <label><span><i class="swatch yellow"></i>黄线 Y</span><span><input id="yellow" type="number" step="any" value="69"> mm</span></label>
+            <label><span><i class="swatch blue"></i>蓝线 Y</span><span><input id="blue" type="number" step="any" value="87"> mm</span></label>
+            <h3>梯形参数</h3>
+            <label for="offset"><span><i class="swatch red"></i>向上偏移</span><output id="offsetValue"></output></label>
+            <input id="offset" type="range" min="5" max="10" step=".1" value="7.5">
+            <label for="angle"><span><i class="swatch violet"></i>斜边角度</span><output id="angleValue"></output></label>
+            <input id="angle" type="range" min="52" max="55" step=".1" value="53">
+            <label class="check"><input id="ab-enabled" type="checkbox" aria-controls="ab-controls"> A/B 前后搜索条带</label>
+            <div id="ab-controls" hidden>
+              <label for="ab-min">Z 下限 <span><input id="ab-min" type="number" step="any"> mm</span></label>
+              <input id="ab-min-slider" type="range" step="any" aria-label="拖动 Z 下限">
+              <label for="ab-max">Z 上限 <span><input id="ab-max" type="number" step="any"> mm</span></label>
+              <input id="ab-max-slider" type="range" step="any" aria-label="拖动 Z 上限">
+            </div>
+            <label class="check"><input id="union" type="checkbox" checked> 合并重叠外壳</label>
+            <label for="opacity">
+              <span><i class="swatch removed"></i>待裁剪区不透明度</span><output id="opacityValue">20%</output>
+            </label>
+            <input id="opacity" type="range" min="0" max="100" step="1" value="20">
           </div>
-          <p id="status" role="status"></p>
         </div>
+      </div>
+      <details id="connector-panel" class="connector-panel">
+        <summary>装配特征 <span class="toggle-chevron" aria-hidden="true"></span></summary>
+        <div class="connector-settings">
+          <output id="connector-status" role="status" aria-live="polite"></output>
+          <button id="connector-retry" type="button" hidden>重试读取切面</button>
+          <div class="connector-import">
+            <button id="connector-upload" type="button">上传 JSON</button>
+            <input id="connector-file" type="file" accept=".json,application/json" aria-label="自定义轮廓 JSON" hidden>
+            <output id="connector-file-info" role="status"></output>
+          </div>
+          <div id="connector-custom-mode" hidden>
+            <label for="connector-kind">自定义加工方式 <select id="connector-kind">
+              <option value="post">凸柱</option><option value="hole">盲孔</option>
+            </select></label>
+          </div>
+          <div class="connector-fields">
+            <label for="connector-size"><span id="connector-size-label">直径</span><span><input id="connector-size" type="number" step="any" value="8"> mm</span></label>
+            <label for="connector-depth"><span id="connector-depth-label">柱高</span><span><input id="connector-depth" type="number" step="any" value="6"> mm</span></label>
+            <label for="connector-angle">绕 +Y 旋转 <span><input id="connector-angle" type="number" step="any" value="0"> °</span></label>
+            <label for="connector-x">X 偏移 <span><input id="connector-x" type="number" step="any" value="0"> mm</span></label>
+            <label for="connector-z">Z 偏移 <span><input id="connector-z" type="number" step="any" value="0"> mm</span></label>
+          </div>
+        </div>
+      </details>
+      <div id="export-actions" class="actions">
+        <button class="primary" id="apply" disabled>导出裁剪 STL</button>
+        <button id="download" disabled>下载原始 STL</button>
+        <p id="status" role="status"></p>
       </div>
     </aside>
   </main>
